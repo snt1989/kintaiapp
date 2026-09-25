@@ -16,15 +16,25 @@
 
   <div class="card login-card hidden" id="formCard">
     <h1>株式会社三桜</h1>
-    <div class="subtitle">初期セットアップ(最初の管理者アカウントを作成します)</div>
-    <div style="text-align:center;color:var(--color-text-muted);font-size:12.5px;margin:10px 0 4px;">
-      このシステムを初めて使う場合、最初に管理者アカウントを1つ作成する必要があります。<br>
-      このセットアップは、社員が1人も登録されていない状態でのみ実行できます。
+    <div class="subtitle">管理者アカウントの作成</div>
+    <div style="text-align:center;color:var(--color-text-muted);font-size:12.5px;margin:10px 0 4px;" id="formHint">
+      最初の管理者アカウントを作成します。
+    </div>
+
+    <div class="hidden" id="keyFieldBox">
+      <label for="setupKey" style="color:#b45309;">セットアップキー(必須)</label>
+      <input type="password" id="setupKey" autocomplete="off" placeholder="Vercelに設定した ADMIN_SETUP_KEY">
+      <div style="font-size:11.5px;color:var(--color-text-muted);margin:-6px 0 10px;">
+        既に社員が登録されているため、Vercelの環境変数 <code>ADMIN_SETUP_KEY</code> に設定した合言葉の入力が必要です。
+      </div>
     </div>
 
     <form id="setupForm">
       <label for="employeeCode">社員番号</label>
       <input type="text" id="employeeCode" autocomplete="off" required autofocus placeholder="例: A0001">
+      <div style="font-size:11.5px;color:var(--color-text-muted);margin:-6px 0 10px;">
+        既に使われている社員番号を入力すると、そのアカウントが管理者に昇格します。
+      </div>
 
       <label for="name">氏名</label>
       <input type="text" id="name" autocomplete="name" required>
@@ -50,13 +60,16 @@
     <button type="button" class="btn" id="proceedBtn" style="margin-top:16px;">管理者ダッシュボードへ進む</button>
   </div>
 
-  <div class="card login-card hidden" id="alreadyCard">
-    <h1>セットアップ済みです</h1>
-    <div class="subtitle">既に社員が登録されているため、このセットアップは実行できません</div>
-    <div style="text-align:center;color:var(--color-text-muted);font-size:12.5px;margin-top:10px;">
-      ログイン画面からいつも通りログインしてください。
+  <div class="card login-card hidden" id="noKeyCard">
+    <h1>セットアップキーが未設定です</h1>
+    <div class="subtitle">既に社員が登録されているため、追加の管理者作成には合言葉が必要です</div>
+    <div style="text-align:left;color:var(--color-text-muted);font-size:12.5px;margin-top:12px;line-height:1.7;">
+      Vercelのプロジェクト設定(Settings → Environment Variables)で、次の環境変数を追加してください。<br><br>
+      名前: <code>ADMIN_SETUP_KEY</code><br>
+      値: お好きな合言葉(他人に推測されにくい文字列)<br><br>
+      追加後、再デプロイ(Deployments → Redeploy)してから、このページを再読み込みしてください。
     </div>
-    <a href="/index.html" class="btn" style="display:block;text-align:center;margin-top:16px;text-decoration:none;">ログイン画面へ</a>
+    <a href="/index.html" class="btn" style="display:block;text-align:center;margin-top:16px;text-decoration:none;">ログイン画面へ戻る</a>
   </div>
 </div>
 
@@ -65,7 +78,9 @@
   const checkingCard = document.getElementById('checkingCard');
   const formCard = document.getElementById('formCard');
   const doneCard = document.getElementById('doneCard');
-  const alreadyCard = document.getElementById('alreadyCard');
+  const noKeyCard = document.getElementById('noKeyCard');
+  const formHint = document.getElementById('formHint');
+  const keyFieldBox = document.getElementById('keyFieldBox');
   const errorBox = document.getElementById('errorBox');
   const setupBtn = document.getElementById('setupBtn');
   const proceedBtn = document.getElementById('proceedBtn');
@@ -76,15 +91,24 @@
     location.href = existing.role === 'admin' ? '/admin.html' : '/clock.html';
   }
 
+  let keyRequired = false;
+
   (async () => {
     try {
       const data = await Api.request('/auth/setup-status');
       checkingCard.classList.add('hidden');
-      if (data.needsSetup) {
-        formCard.classList.remove('hidden');
-      } else {
-        alreadyCard.classList.remove('hidden');
+      keyRequired = !!data.keyRequired;
+
+      if (data.keyRequired && !data.hasSetupKey) {
+        noKeyCard.classList.remove('hidden');
+        return;
       }
+
+      if (data.keyRequired) {
+        formHint.textContent = '既に社員が登録されています。セットアップキーを入力すると、追加の管理者アカウントを作成(または既存アカウントを管理者に昇格)できます。';
+        keyFieldBox.classList.remove('hidden');
+      }
+      formCard.classList.remove('hidden');
     } catch (err) {
       checkingCard.querySelector('div:last-child').textContent = err.message;
     }
@@ -99,9 +123,15 @@
     const name = document.getElementById('name').value.trim();
     const password = document.getElementById('password').value;
     const passwordConfirm = document.getElementById('passwordConfirm').value;
+    const setup_key = document.getElementById('setupKey').value;
 
     if (password !== passwordConfirm) {
       errorBox.textContent = 'パスワードが一致しません。';
+      errorBox.classList.remove('hidden');
+      return;
+    }
+    if (keyRequired && !setup_key) {
+      errorBox.textContent = 'セットアップキーを入力してください。';
       errorBox.classList.remove('hidden');
       return;
     }
@@ -112,7 +142,7 @@
     try {
       const data = await Api.request('/auth/setup-admin', {
         method: 'POST',
-        body: { employee_code, name, password },
+        body: { employee_code, name, password, setup_key },
       });
       Api.setSession(data.token, data.employee);
       formCard.classList.add('hidden');

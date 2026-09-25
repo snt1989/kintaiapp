@@ -82,23 +82,46 @@ router.post('/register', async (req, res, next) => {
   }
 });
 
-// 初回セットアップが必要かどうか(社員が1人も登録されていないか)を確認する
+// 初回セットアップ画面の状態を確認する
+// - needsSetup: 社員が1人も登録されていない(無条件でセットアップ可能)
+// - keyRequired: 社員が既にいるため、セットアップキーの入力が必要
+// - hasSetupKey: サーバー側にADMIN_SETUP_KEYが設定されているか(未設定だとkeyRequired時は作成不可)
 router.get('/setup-status', async (req, res, next) => {
   try {
     const { cnt } = await db.get('SELECT COUNT(*) AS cnt FROM employees');
-    res.json({ needsSetup: Number(cnt) === 0 });
+    const needsSetup = Number(cnt) === 0;
+    res.json({
+      needsSetup,
+      keyRequired: !needsSetup,
+      hasSetupKey: !!process.env.ADMIN_SETUP_KEY,
+    });
   } catch (err) {
     next(err);
   }
 });
 
-// 初回セットアップ: 社員が1人も登録されていない場合のみ、管理者アカウントを作成できる
-// (ターミナル操作なしでブラウザから初期管理者を作成するための専用エンドポイント)
+// 管理者アカウントの作成(ターミナル操作なしでブラウザから完結させるための専用エンドポイント)
+// - 社員が1人も登録されていない場合: 誰でも作成可能(初回セットアップ)
+// - 社員が既に登録されている場合: Vercelの環境変数 ADMIN_SETUP_KEY と一致する
+//   セットアップキーを入力した場合のみ、追加の管理者アカウントを作成できる
+// - 指定した社員番号が既に存在する場合は、そのアカウントを管理者に昇格させる(新規作成ではなく更新)
 router.post('/setup-admin', async (req, res, next) => {
   try {
     const { cnt } = await db.get('SELECT COUNT(*) AS cnt FROM employees');
-    if (Number(cnt) > 0) {
-      return res.status(403).json({ error: '初期セットアップは既に完了しています(社員が1人以上登録済みです)。' });
+    const needsSetup = Number(cnt) === 0;
+
+    if (!needsSetup) {
+      const expectedKey = process.env.ADMIN_SETUP_KEY;
+      const { setup_key } = req.body || {};
+      if (!expectedKey) {
+        return res.status(403).json({
+          error:
+            '既に社員が登録されているため、この画面からは作成できません。追加の管理者を作成するには、Vercelの環境変数に ADMIN_SETUP_KEY(合言葉)を設定してから、再度お試しください。',
+        });
+      }
+      if (!setup_key || setup_key !== expectedKey) {
+        return res.status(403).json({ error: 'セットアップキーが正しくありません。' });
+      }
     }
 
     const { employee_code, name, password } = req.body || {};
@@ -109,11 +132,23 @@ router.post('/setup-admin', async (req, res, next) => {
       return res.status(400).json({ error: 'パスワードは3文字以上にしてください。' });
     }
 
+    const code = String(employee_code).trim();
     const hash = bcrypt.hashSync(password, 10);
-    const employee = await db.get(
-      'INSERT INTO employees (employee_code, name, password_hash, role, active) VALUES (?, ?, ?, ?, 1) RETURNING *',
-      [String(employee_code).trim(), String(name).trim(), hash, 'admin']
-    );
+    const existing = await db.get('SELECT id FROM employees WHERE employee_code = ?', [code]);
+
+    let employee;
+    if (existing) {
+      // 既存の社員番号の場合は、そのアカウントを管理者として更新する(新規社員は作らない)
+      employee = await db.get(
+        'UPDATE employees SET name = ?, password_hash = ?, role = ?, active = 1 WHERE id = ? RETURNING *',
+        [String(name).trim(), hash, 'admin', existing.id]
+      );
+    } else {
+      employee = await db.get(
+        'INSERT INTO employees (employee_code, name, password_hash, role, active) VALUES (?, ?, ?, ?, 1) RETURNING *',
+        [code, String(name).trim(), hash, 'admin']
+      );
+    }
 
     const token = signToken(employee);
     res.json({
