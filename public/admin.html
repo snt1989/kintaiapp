@@ -35,6 +35,24 @@
     </div>
 
     <div class="card">
+      <div class="section-title">日別勤務時間</div>
+      <p class="text-muted" style="margin:0 0 10px;">下の勤怠ログの絞り込み条件(社員・期間)に連動して、社員ごとの日別勤務時間を集計します。</p>
+      <div class="filter-row" style="margin-bottom:10px;">
+        <button class="btn small secondary" id="workSummaryCsvBtn">勤務時間CSV出力</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>社員番号</th><th>氏名</th><th>日付</th><th>勤務時間</th></tr>
+          </thead>
+          <tbody id="workSummaryBody">
+            <tr><td colspan="4" class="text-muted">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="section-title">勤怠ログ</div>
       <div class="filter-row">
         <div>
@@ -120,6 +138,79 @@ function jstInputValueToIso(value) {
 
 let pendingChanges = {}; // { logId: "YYYY-MM-DDTHH:MM" }
 let selectedIds = new Set();
+let lastLogsCache = [];
+let lastWorkSummaryCache = [];
+
+// 出勤〜退勤の合計から休憩時間を差し引いて勤務時間を算出する(未退勤の場合は現在時刻までを計上)
+function computeWorkedMinutes(logs, now) {
+  let workedMs = 0;
+  let breakMs = 0;
+  let workStart = null;
+  let breakStart = null;
+
+  logs
+    .slice()
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    .forEach((l) => {
+      const t = new Date(l.timestamp);
+      if (l.type === 'clock_in') {
+        workStart = t;
+      } else if (l.type === 'clock_out') {
+        if (workStart) { workedMs += t - workStart; workStart = null; }
+      } else if (l.type === 'break_start') {
+        breakStart = t;
+      } else if (l.type === 'break_end') {
+        if (breakStart) { breakMs += t - breakStart; breakStart = null; }
+      }
+    });
+
+  if (workStart) workedMs += now - workStart;
+  if (breakStart) breakMs += now - breakStart;
+
+  return Math.max(0, Math.round((workedMs - breakMs) / 60000));
+}
+
+function formatWorkedMinutes(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h}時間${m}分`;
+}
+
+// 社員×日付ごとにログをグループ化し、各日の勤務時間を一覧として保持・表示する
+function renderWorkSummary(logs) {
+  const tbody = document.getElementById('workSummaryBody');
+  const byKey = {};
+  logs.forEach((l) => {
+    const dateKey = new Date(l.timestamp).toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+    const key = `${l.employee_id}__${dateKey}`;
+    if (!byKey[key]) {
+      byKey[key] = { employee_id: l.employee_id, employee_code: l.employee_code, employee_name: l.employee_name, dateKey, logs: [] };
+    }
+    byKey[key].logs.push(l);
+  });
+
+  const now = new Date();
+  const rows = Object.values(byKey)
+    .map((g) => ({
+      employee_code: g.employee_code,
+      employee_name: g.employee_name,
+      dateKey: g.dateKey,
+      minutes: computeWorkedMinutes(g.logs, now),
+    }))
+    .sort((a, b) => (a.dateKey === b.dateKey ? a.employee_code.localeCompare(b.employee_code) : b.dateKey.localeCompare(a.dateKey)));
+
+  lastWorkSummaryCache = rows;
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="text-muted">記録がありません。</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map((r) => {
+    const displayDate = new Date(`${r.dateKey}T00:00:00+09:00`).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' });
+    return `<tr><td>${r.employee_code}</td><td>${r.employee_name}</td><td>${displayDate}</td><td class="tabular-time">${formatWorkedMinutes(r.minutes)}</td></tr>`;
+  }).join('');
+}
 
 function updatePendingUi() {
   const count = Object.keys(pendingChanges).length;
@@ -162,6 +253,9 @@ async function loadLogs() {
       return d === todayStr;
     }).length;
     document.getElementById('statTodayLogs').textContent = todayCount;
+
+    lastLogsCache = data.logs;
+    renderWorkSummary(data.logs);
 
     if (!data.logs.length) {
       tbody.innerHTML = '<tr><td colspan="9" class="text-muted">記録がありません。</td></tr>';
@@ -213,6 +307,7 @@ async function loadLogs() {
     });
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="9" class="error-msg">${err.message}</td></tr>`;
+    document.getElementById('workSummaryBody').innerHTML = `<tr><td colspan="4" class="error-msg">${err.message}</td></tr>`;
   }
 }
 
@@ -322,6 +417,30 @@ document.getElementById('csvBtn').addEventListener('click', () => {
       a.remove();
       URL.revokeObjectURL(url);
     });
+});
+
+document.getElementById('workSummaryCsvBtn').addEventListener('click', () => {
+  if (!lastWorkSummaryCache.length) {
+    document.getElementById('bulkEditMsg').innerHTML = '<div class="error-msg">出力対象の勤務時間データがありません。</div>';
+    return;
+  }
+  const header = '社員番号,氏名,日付,勤務時間(分),勤務時間\n';
+  const rows = lastWorkSummaryCache.map((r) => {
+    const displayDate = new Date(`${r.dateKey}T00:00:00+09:00`).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' });
+    return [r.employee_code, r.employee_name, displayDate, r.minutes, formatWorkedMinutes(r.minutes)]
+      .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+      .join(',');
+  });
+  const csv = '﻿' + header + rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'work_time_summary.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 });
 
 // 初期表示: 直近30日
