@@ -15,18 +15,18 @@ router.get('/divisions', async (req, res, next) => {
   }
 });
 
-// 次に使う社員番号を自動採番する(E0001, E0002, ... の形式)
+// 次に使う社員番号を自動採番する(0001, 0002, ... の形式)
 async function generateEmployeeCode() {
-  const rows = await db.all("SELECT employee_code FROM employees WHERE employee_code LIKE 'E%'");
+  const rows = await db.all('SELECT employee_code FROM employees');
   let maxNum = 0;
   for (const row of rows) {
-    const m = /^E(\d+)$/.exec(row.employee_code);
+    const m = /^(\d+)$/.exec(row.employee_code);
     if (m) {
       const n = parseInt(m[1], 10);
       if (n > maxNum) maxNum = n;
     }
   }
-  return `E${String(maxNum + 1).padStart(4, '0')}`;
+  return String(maxNum + 1).padStart(4, '0');
 }
 
 // 従業員による自己登録(社員番号は自動採番、権限は常に一般社員)
