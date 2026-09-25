@@ -36,15 +36,21 @@ const Api = (() => {
       body: options.body ? JSON.stringify(options.body) : undefined,
     });
 
+    const data = await res.json().catch(() => ({}));
+
     if (res.status === 401) {
-      clearSession();
-      if (!location.pathname.endsWith('/index.html') && location.pathname !== '/') {
-        location.href = '/index.html';
+      if (token) {
+        // トークンを送ったのに401 = セッション切れ(期限切れ・無効なトークン)
+        clearSession();
+        if (!location.pathname.endsWith('/index.html') && location.pathname !== '/') {
+          location.href = '/index.html';
+        }
+        throw new Error('認証切れです。再度ログインしてください。');
       }
-      throw new Error('認証切れです。再度ログインしてください。');
+      // トークンを送っていない401(ログイン失敗など)はサーバーのメッセージをそのまま表示する
+      throw new Error(data.error || '認証に失敗しました。');
     }
 
-    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const message = data.error || `エラーが発生しました (${res.status})`;
       throw new Error(data.detail ? `${message}(詳細: ${data.detail})` : message);
