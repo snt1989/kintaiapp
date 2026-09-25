@@ -13,8 +13,11 @@
     <div class="subtitle">社員登録(セルフ登録)</div>
 
     <form id="registerForm">
-      <label for="name">氏名</label>
-      <input type="text" id="name" autocomplete="name" required autofocus>
+      <label for="lastName">姓</label>
+      <input type="text" id="lastName" autocomplete="family-name" required autofocus>
+
+      <label for="firstName">名</label>
+      <input type="text" id="firstName" autocomplete="given-name" required>
 
       <label for="division">事業部</label>
       <select id="division">
@@ -88,7 +91,8 @@
     e.preventDefault();
     errorBox.classList.add('hidden');
 
-    const name = document.getElementById('name').value.trim();
+    const last_name = document.getElementById('lastName').value.trim();
+    const first_name = document.getElementById('firstName').value.trim();
     const division = divisionSelect.value;
     const password = document.getElementById('password').value;
     const passwordConfirm = document.getElementById('passwordConfirm').value;
@@ -105,7 +109,7 @@
     try {
       const data = await Api.request('/auth/register', {
         method: 'POST',
-        body: { name, password, division },
+        body: { last_name, first_name, password, division },
       });
       Api.setSession(data.token, data.employee);
       doneCode.textContent = data.employee.employee_code;

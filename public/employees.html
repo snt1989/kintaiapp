@@ -112,8 +112,11 @@
       <label for="empCode">社員番号</label>
       <input type="text" id="empCode" required>
 
-      <label for="empName">氏名</label>
-      <input type="text" id="empName" required>
+      <label for="empLastName">姓</label>
+      <input type="text" id="empLastName" required>
+
+      <label for="empFirstName">名</label>
+      <input type="text" id="empFirstName" required>
 
       <label for="empDivision">事業部</label>
       <select id="empDivision">
@@ -388,7 +391,8 @@ function openNewModal() {
   document.getElementById('empId').value = '';
   document.getElementById('empCode').value = '';
   document.getElementById('empCode').disabled = false;
-  document.getElementById('empName').value = '';
+  document.getElementById('empLastName').value = '';
+  document.getElementById('empFirstName').value = '';
   document.getElementById('empDivision').value = '';
   document.getElementById('empRole').value = 'employee';
   document.getElementById('empPassword').value = '';
@@ -407,7 +411,10 @@ function openEditModal(id) {
   document.getElementById('empId').value = e.id;
   document.getElementById('empCode').value = e.employee_code;
   document.getElementById('empCode').disabled = false;
-  document.getElementById('empName').value = e.name;
+  // last_name/first_nameが無い古いデータの場合は、氏名をスペースで分割して補う
+  const fallbackParts = (e.name || '').split(' ');
+  document.getElementById('empLastName').value = e.last_name || fallbackParts[0] || '';
+  document.getElementById('empFirstName').value = e.first_name || fallbackParts.slice(1).join(' ') || '';
   document.getElementById('empDivision').value = e.division || '';
   document.getElementById('empRole').value = e.role;
   document.getElementById('empPassword').value = '';
@@ -428,7 +435,8 @@ form.addEventListener('submit', async (e) => {
   modalError.classList.add('hidden');
   const id = document.getElementById('empId').value;
   const employee_code = document.getElementById('empCode').value.trim();
-  const name = document.getElementById('empName').value.trim();
+  const last_name = document.getElementById('empLastName').value.trim();
+  const first_name = document.getElementById('empFirstName').value.trim();
   const division = document.getElementById('empDivision').value.trim();
   const role = document.getElementById('empRole').value;
   const password = document.getElementById('empPassword').value;
@@ -436,13 +444,13 @@ form.addEventListener('submit', async (e) => {
   try {
     if (id) {
       const active = document.getElementById('empActive').value === '1';
-      const body = { employee_code, name, division, role, active };
+      const body = { employee_code, last_name, first_name, division, role, active };
       if (password) body.new_password = password;
       await Api.request(`/admin/employees/${id}`, { method: 'PUT', body });
     } else {
       await Api.request('/admin/employees', {
         method: 'POST',
-        body: { employee_code, name, division, role, password },
+        body: { employee_code, last_name, first_name, division, role, password },
       });
     }
     modal.classList.add('hidden');

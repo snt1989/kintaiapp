@@ -3,12 +3,21 @@
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const db = require('../db');
+const { combineName } = require('../nameUtil');
 
 const [, , employeeCode, name, password, division] = process.argv;
+// "山田 太郎" のように姓名をスペース区切りで受け取り、姓・名に分割して保存する
+const [lastName, ...rest] = (name || '').trim().split(/\s+/);
+const firstName = rest.join(' ');
 
 async function main() {
   if (!employeeCode || !name || !password) {
-    console.log('使い方: node server/scripts/addEmployee.js <社員番号> <氏名> <パスワード> [事業部]');
+    console.log('使い方: node server/scripts/addEmployee.js <社員番号> "<姓> <名>" <パスワード> [事業部]');
+    process.exitCode = 1;
+    return;
+  }
+  if (!firstName) {
+    console.error('エラー: 氏名は "姓 名" のようにスペースで区切って指定してください(例: "山田 太郎")。');
     process.exitCode = 1;
     return;
   }
@@ -29,15 +38,13 @@ async function main() {
   }
 
   const hash = bcrypt.hashSync(password, 10);
-  await db.run('INSERT INTO employees (employee_code, name, password_hash, role, division) VALUES (?, ?, ?, ?, ?)', [
-    employeeCode,
-    name,
-    hash,
-    'employee',
-    division || null,
-  ]);
+  const fullName = combineName(lastName, firstName);
+  await db.run(
+    'INSERT INTO employees (employee_code, name, last_name, first_name, password_hash, role, division) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [employeeCode, fullName, lastName, firstName, hash, 'employee', division || null]
+  );
 
-  console.log(`社員アカウントを作成しました: 社員番号=${employeeCode}, 氏名=${name}` + (division ? `, 事業部=${division}` : ''));
+  console.log(`社員アカウントを作成しました: 社員番号=${employeeCode}, 氏名=${fullName}` + (division ? `, 事業部=${division}` : ''));
 }
 
 main()

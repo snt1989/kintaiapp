@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { requireAuth, requireAdmin } = require('../auth');
+const { combineName } = require('../nameUtil');
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
@@ -167,7 +168,7 @@ router.delete('/divisions/:id', async (req, res, next) => {
 
 // ---- 社員管理 ----
 
-const EMPLOYEE_COLUMNS = 'id, employee_code, name, role, active, division, created_at';
+const EMPLOYEE_COLUMNS = 'id, employee_code, name, last_name, first_name, role, active, division, created_at';
 
 router.get('/employees', async (req, res, next) => {
   try {
@@ -180,9 +181,9 @@ router.get('/employees', async (req, res, next) => {
 
 router.post('/employees', async (req, res, next) => {
   try {
-    const { employee_code, name, password, role, division } = req.body || {};
-    if (!employee_code || !name || !password) {
-      return res.status(400).json({ error: '社員番号・氏名・パスワードを入力してください。' });
+    const { employee_code, last_name, first_name, password, role, division } = req.body || {};
+    if (!employee_code || !last_name || !String(last_name).trim() || !first_name || !String(first_name).trim() || !password) {
+      return res.status(400).json({ error: '社員番号・姓・名・パスワードを入力してください。' });
     }
     if (String(password).length < 3) {
       return res.status(400).json({ error: 'パスワードは3文字以上にしてください。' });
@@ -201,10 +202,13 @@ router.post('/employees', async (req, res, next) => {
       return res.status(409).json({ error: 'この社員番号は既に登録されています。' });
     }
 
+    const lastNameValue = String(last_name).trim();
+    const firstNameValue = String(first_name).trim();
+    const nameValue = combineName(lastNameValue, firstNameValue);
     const hash = bcrypt.hashSync(password, 10);
     const inserted = await db.get(
-      'INSERT INTO employees (employee_code, name, password_hash, role, division) VALUES (?, ?, ?, ?, ?) RETURNING id',
-      [String(employee_code).trim(), name, hash, roleValue, divisionValue]
+      'INSERT INTO employees (employee_code, name, last_name, first_name, password_hash, role, division) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      [String(employee_code).trim(), nameValue, lastNameValue, firstNameValue, hash, roleValue, divisionValue]
     );
 
     const employee = await db.get(`SELECT ${EMPLOYEE_COLUMNS} FROM employees WHERE id = ?`, [inserted.id]);
@@ -320,14 +324,28 @@ router.delete('/employees', async (req, res, next) => {
 router.put('/employees/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { employee_code, name, role, active, division, new_password } = req.body || {};
+    const { employee_code, last_name, first_name, role, active, division, new_password } = req.body || {};
 
     const employee = await db.get('SELECT * FROM employees WHERE id = ?', [id]);
     if (!employee) {
       return res.status(404).json({ error: '社員が見つかりません。' });
     }
 
-    const nextName = name !== undefined ? name : employee.name;
+    let nextLastName = employee.last_name;
+    let nextFirstName = employee.first_name;
+    if (last_name !== undefined) {
+      if (!String(last_name).trim()) {
+        return res.status(400).json({ error: '姓を入力してください。' });
+      }
+      nextLastName = String(last_name).trim();
+    }
+    if (first_name !== undefined) {
+      if (!String(first_name).trim()) {
+        return res.status(400).json({ error: '名を入力してください。' });
+      }
+      nextFirstName = String(first_name).trim();
+    }
+    const nextName = combineName(nextLastName, nextFirstName) || employee.name;
     const nextRole = role === 'admin' || role === 'employee' ? role : employee.role;
     const nextActive = active !== undefined ? (active ? 1 : 0) : employee.active;
     const nextDivision = division !== undefined ? (String(division).trim() || null) : employee.division;
@@ -354,14 +372,10 @@ router.put('/employees/:id', async (req, res, next) => {
       return res.status(400).json({ error: '指定された事業部はマスタに登録されていません。' });
     }
 
-    await db.run('UPDATE employees SET employee_code = ?, name = ?, role = ?, active = ?, division = ? WHERE id = ?', [
-      nextCode,
-      nextName,
-      nextRole,
-      nextActive,
-      nextDivision,
-      id,
-    ]);
+    await db.run(
+      'UPDATE employees SET employee_code = ?, name = ?, last_name = ?, first_name = ?, role = ?, active = ?, division = ? WHERE id = ?',
+      [nextCode, nextName, nextLastName, nextFirstName, nextRole, nextActive, nextDivision, id]
+    );
 
     if (new_password) {
       if (String(new_password).length < 3) {

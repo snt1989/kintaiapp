@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { signToken, requireAuth } = require('../auth');
+const { combineName } = require('../nameUtil');
 
 const router = express.Router();
 
@@ -32,9 +33,9 @@ async function generateEmployeeCode() {
 // 従業員による自己登録(社員番号は自動採番、権限は常に一般社員)
 router.post('/register', async (req, res, next) => {
   try {
-    const { name, password, division } = req.body || {};
-    if (!name || !String(name).trim() || !password) {
-      return res.status(400).json({ error: '氏名とパスワードを入力してください。' });
+    const { last_name, first_name, password, division } = req.body || {};
+    if (!last_name || !String(last_name).trim() || !first_name || !String(first_name).trim() || !password) {
+      return res.status(400).json({ error: '姓・名・パスワードを入力してください。' });
     }
     if (String(password).length < 3) {
       return res.status(400).json({ error: 'パスワードは3文字以上にしてください。' });
@@ -45,6 +46,9 @@ router.post('/register', async (req, res, next) => {
       return res.status(400).json({ error: '選択した事業部が見つかりません。' });
     }
 
+    const lastNameValue = String(last_name).trim();
+    const firstNameValue = String(first_name).trim();
+    const nameValue = combineName(lastNameValue, firstNameValue);
     const hash = bcrypt.hashSync(password, 10);
 
     let employee = null;
@@ -52,8 +56,8 @@ router.post('/register', async (req, res, next) => {
       const code = await generateEmployeeCode();
       try {
         employee = await db.get(
-          'INSERT INTO employees (employee_code, name, password_hash, role, active, division) VALUES (?, ?, ?, ?, 1, ?) RETURNING *',
-          [code, String(name).trim(), hash, 'employee', divisionValue]
+          'INSERT INTO employees (employee_code, name, last_name, first_name, password_hash, role, active, division) VALUES (?, ?, ?, ?, ?, ?, 1, ?) RETURNING *',
+          [code, nameValue, lastNameValue, firstNameValue, hash, 'employee', divisionValue]
         );
       } catch (err) {
         // 採番の競合(同時登録などで社員番号が重複)の場合のみ再試行する
@@ -73,6 +77,8 @@ router.post('/register', async (req, res, next) => {
         id: employee.id,
         employee_code: employee.employee_code,
         name: employee.name,
+        last_name: employee.last_name,
+        first_name: employee.first_name,
         role: employee.role,
         division: employee.division || null,
       },
@@ -124,15 +130,26 @@ router.post('/setup-admin', async (req, res, next) => {
       }
     }
 
-    const { employee_code, name, password } = req.body || {};
-    if (!employee_code || !String(employee_code).trim() || !name || !String(name).trim() || !password) {
-      return res.status(400).json({ error: '社員番号・氏名・パスワードを入力してください。' });
+    const { employee_code, last_name, first_name, password } = req.body || {};
+    if (
+      !employee_code ||
+      !String(employee_code).trim() ||
+      !last_name ||
+      !String(last_name).trim() ||
+      !first_name ||
+      !String(first_name).trim() ||
+      !password
+    ) {
+      return res.status(400).json({ error: '社員番号・姓・名・パスワードを入力してください。' });
     }
     if (String(password).length < 3) {
       return res.status(400).json({ error: 'パスワードは3文字以上にしてください。' });
     }
 
     const code = String(employee_code).trim();
+    const lastNameValue = String(last_name).trim();
+    const firstNameValue = String(first_name).trim();
+    const nameValue = combineName(lastNameValue, firstNameValue);
     const hash = bcrypt.hashSync(password, 10);
     const existing = await db.get('SELECT id FROM employees WHERE employee_code = ?', [code]);
 
@@ -140,13 +157,13 @@ router.post('/setup-admin', async (req, res, next) => {
     if (existing) {
       // 既存の社員番号の場合は、そのアカウントを管理者として更新する(新規社員は作らない)
       employee = await db.get(
-        'UPDATE employees SET name = ?, password_hash = ?, role = ?, active = 1 WHERE id = ? RETURNING *',
-        [String(name).trim(), hash, 'admin', existing.id]
+        'UPDATE employees SET name = ?, last_name = ?, first_name = ?, password_hash = ?, role = ?, active = 1 WHERE id = ? RETURNING *',
+        [nameValue, lastNameValue, firstNameValue, hash, 'admin', existing.id]
       );
     } else {
       employee = await db.get(
-        'INSERT INTO employees (employee_code, name, password_hash, role, active) VALUES (?, ?, ?, ?, 1) RETURNING *',
-        [code, String(name).trim(), hash, 'admin']
+        'INSERT INTO employees (employee_code, name, last_name, first_name, password_hash, role, active) VALUES (?, ?, ?, ?, ?, ?, 1) RETURNING *',
+        [code, nameValue, lastNameValue, firstNameValue, hash, 'admin']
       );
     }
 
@@ -157,6 +174,8 @@ router.post('/setup-admin', async (req, res, next) => {
         id: employee.id,
         employee_code: employee.employee_code,
         name: employee.name,
+        last_name: employee.last_name,
+        first_name: employee.first_name,
         role: employee.role,
         division: employee.division || null,
       },
@@ -194,6 +213,8 @@ router.post('/login', async (req, res, next) => {
         id: employee.id,
         employee_code: employee.employee_code,
         name: employee.name,
+        last_name: employee.last_name,
+        first_name: employee.first_name,
         role: employee.role,
         division: employee.division || null,
       },

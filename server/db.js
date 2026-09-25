@@ -154,6 +154,23 @@ function ensureSchema() {
       await query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS remarks TEXT;`);
       await query(`ALTER TABLE divisions ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;`);
 
+      // 氏名を姓・名に分けて保持する(nameは "姓 名" を自動的に結合した表示・検索用の列として維持する)
+      await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS last_name TEXT;`);
+      await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS first_name TEXT;`);
+      // 既存データ(姓・名が未設定)は、nameの最初の空白で簡易的に分割して補完する
+      await query(`
+        UPDATE employees
+        SET last_name = COALESCE(last_name, split_part(name, ' ', 1)),
+            first_name = COALESCE(
+              first_name,
+              CASE WHEN position(' ' IN name) > 0
+                   THEN NULLIF(trim(substring(name FROM position(' ' IN name) + 1)), '')
+                   ELSE NULL
+              END
+            )
+        WHERE last_name IS NULL OR first_name IS NULL;
+      `);
+
       // 既存社員が使用している事業部名を、事業部マスタに未登録なら自動的に取り込む
       const used = await all(
         "SELECT DISTINCT division FROM employees WHERE division IS NOT NULL AND division <> ''"

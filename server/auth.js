@@ -9,6 +9,8 @@ function signToken(employee) {
       id: employee.id,
       employee_code: employee.employee_code,
       name: employee.name,
+      last_name: employee.last_name || null,
+      first_name: employee.first_name || null,
       role: employee.role,
       division: employee.division || null,
     },
