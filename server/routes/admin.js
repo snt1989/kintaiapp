@@ -320,7 +320,7 @@ router.delete('/employees', async (req, res, next) => {
 router.put('/employees/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, role, active, division, new_password } = req.body || {};
+    const { employee_code, name, role, active, division, new_password } = req.body || {};
 
     const employee = await db.get('SELECT * FROM employees WHERE id = ?', [id]);
     if (!employee) {
@@ -332,11 +332,30 @@ router.put('/employees/:id', async (req, res, next) => {
     const nextActive = active !== undefined ? (active ? 1 : 0) : employee.active;
     const nextDivision = division !== undefined ? (String(division).trim() || null) : employee.division;
 
+    let nextCode = employee.employee_code;
+    if (employee_code !== undefined) {
+      const trimmedCode = String(employee_code).trim();
+      if (!trimmedCode) {
+        return res.status(400).json({ error: '社員番号を入力してください。' });
+      }
+      if (trimmedCode !== employee.employee_code) {
+        const duplicate = await db.get('SELECT id FROM employees WHERE employee_code = ? AND id <> ?', [
+          trimmedCode,
+          id,
+        ]);
+        if (duplicate) {
+          return res.status(409).json({ error: 'この社員番号は既に使用されています。' });
+        }
+        nextCode = trimmedCode;
+      }
+    }
+
     if (nextDivision && !(await db.get('SELECT id FROM divisions WHERE name = ?', [nextDivision]))) {
       return res.status(400).json({ error: '指定された事業部はマスタに登録されていません。' });
     }
 
-    await db.run('UPDATE employees SET name = ?, role = ?, active = ?, division = ? WHERE id = ?', [
+    await db.run('UPDATE employees SET employee_code = ?, name = ?, role = ?, active = ?, division = ? WHERE id = ?', [
+      nextCode,
       nextName,
       nextRole,
       nextActive,

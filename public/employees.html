@@ -128,6 +128,9 @@
 
       <label for="empPassword" id="empPasswordLabel">パスワード(3文字以上)</label>
       <input type="password" id="empPassword">
+      <div id="empPasswordNote" class="hidden" style="font-size:11.5px;color:var(--color-text-muted);margin:-6px 0 10px;">
+        セキュリティのため、現在のパスワードを確認することはできません。変更する場合のみ、新しいパスワードを入力してください。
+      </div>
 
       <div id="empActiveWrap" class="hidden">
         <label for="empActive">状態</label>
@@ -391,6 +394,7 @@ function openNewModal() {
   document.getElementById('empPassword').value = '';
   document.getElementById('empPasswordLabel').textContent = 'パスワード(3文字以上)';
   document.getElementById('empPassword').required = true;
+  document.getElementById('empPasswordNote').classList.add('hidden');
   document.getElementById('empActiveWrap').classList.add('hidden');
   modalError.classList.add('hidden');
   modal.classList.remove('hidden');
@@ -402,13 +406,14 @@ function openEditModal(id) {
   document.getElementById('modalTitle').textContent = '社員を編集';
   document.getElementById('empId').value = e.id;
   document.getElementById('empCode').value = e.employee_code;
-  document.getElementById('empCode').disabled = true;
+  document.getElementById('empCode').disabled = false;
   document.getElementById('empName').value = e.name;
   document.getElementById('empDivision').value = e.division || '';
   document.getElementById('empRole').value = e.role;
   document.getElementById('empPassword').value = '';
   document.getElementById('empPasswordLabel').textContent = '新しいパスワード(変更する場合のみ、3文字以上)';
   document.getElementById('empPassword').required = false;
+  document.getElementById('empPasswordNote').classList.remove('hidden');
   document.getElementById('empActiveWrap').classList.remove('hidden');
   document.getElementById('empActive').value = e.active ? '1' : '0';
   modalError.classList.add('hidden');
@@ -431,7 +436,7 @@ form.addEventListener('submit', async (e) => {
   try {
     if (id) {
       const active = document.getElementById('empActive').value === '1';
-      const body = { name, division, role, active };
+      const body = { employee_code, name, division, role, active };
       if (password) body.new_password = password;
       await Api.request(`/admin/employees/${id}`, { method: 'PUT', body });
     } else {
