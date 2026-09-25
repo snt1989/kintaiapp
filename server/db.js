@@ -152,6 +152,8 @@ function ensureSchema() {
       // 将来的なスキーマ変更にも耐えられるよう、念のため列の存在確認も行う
       await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS division TEXT;`);
       await query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS remarks TEXT;`);
+      // 打刻時点の現場が属する事業部(必須項目)。社員マスタ上の所属事業部とは別に、打刻ごとに記録する。
+      await query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS site_division TEXT;`);
       await query(`ALTER TABLE divisions ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;`);
 
       // 氏名を姓・名に分けて保持する(nameは "姓 名" を自動的に結合した表示・検索用の列として維持する)

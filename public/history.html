@@ -50,10 +50,10 @@
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>日付</th><th>時刻</th><th>種別</th><th>現場名</th><th>備考</th></tr>
+            <tr><th>日付</th><th>時刻</th><th>種別</th><th>事業部</th><th>現場名</th><th>備考</th></tr>
           </thead>
           <tbody id="logTableBody">
-            <tr><td colspan="5" class="text-muted">読み込み中...</td></tr>
+            <tr><td colspan="6" class="text-muted">読み込み中...</td></tr>
           </tbody>
         </table>
       </div>
@@ -121,7 +121,7 @@ function formatWorkedMinutes(minutes) {
 async function loadHistory() {
   const tbody = document.getElementById('logTableBody');
   const summaryBody = document.getElementById('dailySummaryBody');
-  tbody.innerHTML = '<tr><td colspan="5" class="text-muted">読み込み中...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" class="text-muted">読み込み中...</td></tr>';
   summaryBody.innerHTML = '<tr><td colspan="2" class="text-muted">読み込み中...</td></tr>';
 
   const from = document.getElementById('from').value;
@@ -133,7 +133,7 @@ async function loadHistory() {
   try {
     const data = await Api.request(`/attendance/my?${params.toString()}`);
     if (!data.logs.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-muted">記録がありません。</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="text-muted">記録がありません。</td></tr>';
       summaryBody.innerHTML = '<tr><td colspan="2" class="text-muted">記録がありません。</td></tr>';
       return;
     }
@@ -142,9 +142,10 @@ async function loadHistory() {
         const t = new Date(l.timestamp);
         const date = t.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' });
         const time = t.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' });
+        const division = l.site_division ? l.site_division : '<span class="text-muted">-</span>';
         const site = l.note ? l.note : '<span class="text-muted">-</span>';
         const remarks = l.remarks ? l.remarks : '<span class="text-muted">-</span>';
-        return `<tr><td>${date}</td><td>${time}</td><td><span class="badge ${l.type}">${l.label}</span></td><td>${site}</td><td>${remarks}</td></tr>`;
+        return `<tr><td>${date}</td><td>${time}</td><td><span class="badge ${l.type}">${l.label}</span></td><td>${division}</td><td>${site}</td><td>${remarks}</td></tr>`;
       })
       .join('');
 
@@ -165,7 +166,7 @@ async function loadHistory() {
       })
       .join('');
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="5" class="error-msg">${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="error-msg">${err.message}</td></tr>`;
     summaryBody.innerHTML = `<tr><td colspan="2" class="error-msg">${err.message}</td></tr>`;
   }
 }

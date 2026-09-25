@@ -64,9 +64,19 @@ const STATUS_ERROR_MESSAGES = {
 // 打刻登録(出勤/退勤/休憩開始/休憩終了)
 router.post('/clock', requireAuth, async (req, res, next) => {
   try {
-    const { type, note, remarks } = req.body || {};
+    const { type, note, remarks, site_division } = req.body || {};
     if (!VALID_TYPES.includes(type)) {
       return res.status(400).json({ error: '打刻種別が正しくありません。' });
+    }
+
+    // 現場の該当事業部は必須項目。事業部マスタに登録済みの値のみ許可する。
+    const siteDivisionValue = site_division && String(site_division).trim() ? String(site_division).trim() : null;
+    if (!siteDivisionValue) {
+      return res.status(400).json({ error: '現場の該当事業部を選択してください。' });
+    }
+    const divisionExists = await db.get('SELECT id FROM divisions WHERE name = ?', [siteDivisionValue]);
+    if (!divisionExists) {
+      return res.status(400).json({ error: '指定された事業部はマスタに登録されていません。' });
     }
 
     const status = deriveStatus(await getLastLogType(req.user.id));
@@ -80,8 +90,8 @@ router.post('/clock', requireAuth, async (req, res, next) => {
 
     const timestamp = new Date().toISOString();
     const log = await db.get(
-      'INSERT INTO attendance_logs (employee_id, type, timestamp, note, remarks) VALUES (?, ?, ?, ?, ?) RETURNING *',
-      [req.user.id, type, timestamp, siteName, remarksText]
+      'INSERT INTO attendance_logs (employee_id, type, timestamp, note, remarks, site_division) VALUES (?, ?, ?, ?, ?, ?) RETURNING *',
+      [req.user.id, type, timestamp, siteName, remarksText, siteDivisionValue]
     );
 
     const newStatus = deriveStatus(type);

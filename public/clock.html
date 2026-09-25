@@ -34,6 +34,13 @@
       </div>
 
       <div class="site-field">
+        <label for="siteDivision">現場の該当事業部(必須)</label>
+        <select id="siteDivision" required>
+          <option value="">選択してください</option>
+        </select>
+      </div>
+
+      <div class="site-field">
         <label for="siteName">現場名(任意)</label>
         <input type="text" id="siteName" placeholder="例: 〇〇工場 A棟" autocomplete="off">
       </div>
@@ -95,6 +102,31 @@ siteNameInput.value = localStorage.getItem(SITE_NAME_KEY) || '';
 siteNameInput.addEventListener('input', () => {
   localStorage.setItem(SITE_NAME_KEY, siteNameInput.value);
 });
+
+// 現場の該当事業部(必須): 事業部マスタから選択。直前に選んだ値を次回の打刻画面でも初期表示する。
+const SITE_DIVISION_KEY = 'sanoh_attendance_site_division';
+const siteDivisionSelect = document.getElementById('siteDivision');
+siteDivisionSelect.addEventListener('change', () => {
+  localStorage.setItem(SITE_DIVISION_KEY, siteDivisionSelect.value);
+});
+
+async function loadSiteDivisionOptions() {
+  try {
+    const data = await Api.request('/auth/divisions');
+    const saved = localStorage.getItem(SITE_DIVISION_KEY) || '';
+    // 保存値が無ければ、社員本人の所属事業部を初期選択の候補にする
+    const preferred = saved || employee.division || '';
+    siteDivisionSelect.innerHTML = '<option value="">選択してください</option>' +
+      data.divisions.map((d) => `<option value="${d.name}">${d.name}</option>`).join('');
+    if (preferred && data.divisions.some((d) => d.name === preferred)) {
+      siteDivisionSelect.value = preferred;
+    }
+  } catch (err) {
+    // 事業部一覧の取得に失敗した場合でも画面は表示する(打刻時にエラーメッセージで案内)
+    console.error(err);
+  }
+}
+loadSiteDivisionOptions();
 
 // 備考はその打刻限りのメモのため、次回の打刻画面には持ち越さない
 const remarksInput = document.getElementById('remarks');
@@ -218,9 +250,10 @@ async function loadTodayStatus() {
       .map((l) => {
         const t = new Date(l.timestamp);
         const time = t.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' });
+        const divisionTag = l.site_division ? `<span class="site-tag">${l.site_division}</span>` : '';
         const site = l.note ? `<span class="site-tag">${l.note}</span>` : '';
         const remarksLine = l.remarks ? `<div class="remarks-tag">備考: ${l.remarks}</div>` : '';
-        return `<div class="log-entry"><div class="log-row"><span class="log-row-left"><span class="badge ${l.type}">${l.label}</span>${site}</span><span class="tabular-time">${time}</span></div>${remarksLine}</div>`;
+        return `<div class="log-entry"><div class="log-row"><span class="log-row-left"><span class="badge ${l.type}">${l.label}</span>${divisionTag}${site}</span><span class="tabular-time">${time}</span></div>${remarksLine}</div>`;
       })
       .join('');
   } catch (err) {
@@ -234,11 +267,19 @@ document.querySelectorAll('.punch-btn').forEach((btn) => {
     const type = btn.dataset.type;
     const note = siteNameInput.value.trim();
     const remarks = remarksInput.value.trim();
+    const site_division = siteDivisionSelect.value;
+
+    if (!site_division) {
+      showResult('現場の該当事業部を選択してください。', false);
+      siteDivisionSelect.focus();
+      return;
+    }
+
     document.querySelectorAll('.punch-btn').forEach((b) => (b.disabled = true));
     try {
       const data = await Api.request('/attendance/clock', {
         method: 'POST',
-        body: { type, note, remarks },
+        body: { type, note, remarks, site_division },
       });
       showResult(`${data.log.label}を記録しました。`, true);
       applyStatus(data.status);

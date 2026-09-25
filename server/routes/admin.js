@@ -516,10 +516,10 @@ router.get('/logs/csv', async (req, res, next) => {
     const { query, params } = buildLogsQuery(req.query);
     const logs = await db.all(query, params);
 
-    const header = '社員番号,氏名,種別,現場名,備考,日時(JST)\n';
+    const header = '社員番号,氏名,種別,事業部,現場名,備考,日時(JST)\n';
     const rows = logs.map((l) => {
       const jst = new Date(l.timestamp).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
-      return [l.employee_code, l.employee_name, TYPE_LABELS[l.type], l.note || '', l.remarks || '', jst]
+      return [l.employee_code, l.employee_name, TYPE_LABELS[l.type], l.site_division || '', l.note || '', l.remarks || '', jst]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`)
         .join(',');
     });

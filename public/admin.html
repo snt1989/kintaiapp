@@ -67,11 +67,11 @@
           <thead>
             <tr>
               <th><input type="checkbox" id="selectAllCheckbox"></th>
-              <th>社員番号</th><th>氏名</th><th>種別</th><th>現場名</th><th>備考</th><th>日時(修正可)</th><th>操作</th>
+              <th>社員番号</th><th>氏名</th><th>種別</th><th>事業部</th><th>現場名</th><th>備考</th><th>日時(修正可)</th><th>操作</th>
             </tr>
           </thead>
           <tbody id="logTableBody">
-            <tr><td colspan="8" class="text-muted">読み込み中...</td></tr>
+            <tr><td colspan="9" class="text-muted">読み込み中...</td></tr>
           </tbody>
         </table>
       </div>
@@ -138,7 +138,7 @@ function updateSelectionUi() {
 
 async function loadLogs() {
   const tbody = document.getElementById('logTableBody');
-  tbody.innerHTML = '<tr><td colspan="8" class="text-muted">読み込み中...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="9" class="text-muted">読み込み中...</td></tr>';
   pendingChanges = {};
   selectedIds = new Set();
   updatePendingUi();
@@ -164,12 +164,13 @@ async function loadLogs() {
     document.getElementById('statTodayLogs').textContent = todayCount;
 
     if (!data.logs.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-muted">記録がありません。</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="text-muted">記録がありません。</td></tr>';
       return;
     }
 
     tbody.innerHTML = data.logs.map((l) => {
       const inputValue = isoToJstInputValue(l.timestamp);
+      const division = l.site_division ? l.site_division : '<span class="text-muted">-</span>';
       const site = l.note ? l.note : '<span class="text-muted">-</span>';
       const remarks = l.remarks ? l.remarks : '<span class="text-muted">-</span>';
       return `<tr>
@@ -177,6 +178,7 @@ async function loadLogs() {
         <td>${l.employee_code}</td>
         <td>${l.employee_name}</td>
         <td><span class="badge ${l.type}">${l.label}</span></td>
+        <td>${division}</td>
         <td>${site}</td>
         <td>${remarks}</td>
         <td><input type="datetime-local" class="log-edit-input" data-id="${l.id}" data-original="${inputValue}" value="${inputValue}"></td>
@@ -210,7 +212,7 @@ async function loadLogs() {
       btn.addEventListener('click', () => deleteSingleLog(btn.dataset.deleteOne));
     });
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="8" class="error-msg">${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="error-msg">${err.message}</td></tr>`;
   }
 }
 
