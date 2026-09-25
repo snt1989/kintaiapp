@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>管理者ダッシュボード | 三桜 勤怠管理システム</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="app wide">
+  <header class="topbar">
+    <h1>管理者ダッシュボード</h1>
+    <div class="user-info">
+      <span id="userName"></span>
+      <button class="logout-btn" id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <nav class="admin-subnav">
+    <a href="/admin.html" class="active">勤怠ログ</a>
+    <a href="/employees.html">社員管理</a>
+    <a href="/master.html">マスタ管理</a>
+  </nav>
+
+  <main>
+    <div class="grid-2" style="margin-bottom:16px;">
+      <div class="stat-box">
+        <div class="num" id="statEmployees">-</div>
+        <div class="label">登録社員数</div>
+      </div>
+      <div class="stat-box">
+        <div class="num" id="statTodayLogs">-</div>
+        <div class="label">本日の打刻件数</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">勤怠ログ</div>
+      <div class="filter-row">
+        <div>
+          <label for="filterEmployee">社員</label>
+          <select id="filterEmployee"><option value="">全員</option></select>
+        </div>
+        <div>
+          <label for="filterFrom">開始日</label>
+          <input type="date" id="filterFrom">
+        </div>
+        <div>
+          <label for="filterTo">終了日</label>
+          <input type="date" id="filterTo">
+        </div>
+        <button class="btn small" id="applyFilterBtn">絞り込み</button>
+        <button class="btn small secondary" id="csvBtn">CSV出力</button>
+      </div>
+
+      <p class="text-muted" style="margin:0 0 10px;">日時の欄を直接修正すると変更が黄色くハイライトされます。まとめて「変更を保存」で反映されます。</p>
+
+      <div class="filter-row" style="margin-bottom:10px;">
+        <button class="btn small" id="saveChangesBtn" disabled>変更を保存 (<span id="pendingCount">0</span>)</button>
+        <button class="btn small secondary" id="discardChangesBtn" disabled>変更を破棄</button>
+        <button class="btn small danger" id="deleteSelectedBtn" disabled>選択した行を削除 (<span id="selectedCount">0</span>)</button>
+      </div>
+      <div id="bulkEditMsg"></div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="selectAllCheckbox"></th>
+              <th>社員番号</th><th>氏名</th><th>種別</th><th>現場名</th><th>備考</th><th>日時(修正可)</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="logTableBody">
+            <tr><td colspan="8" class="text-muted">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+Api.requireAdmin();
+const employee = Api.getEmployee();
+document.getElementById('userName').textContent = `${employee.name} (管理者)`;
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  Api.clearSession();
+  location.href = '/index.html';
+});
+
+async function loadEmployeeOptions() {
+  const select = document.getElementById('filterEmployee');
+  try {
+    const data = await Api.request('/admin/employees');
+    document.getElementById('statEmployees').textContent = data.employees.length;
+    select.innerHTML = '<option value="">全員</option>' +
+      data.employees.map((e) => `<option value="${e.id}">${e.name} (${e.employee_code})</option>`).join('');
+  } catch (err) {
+    // 社員一覧の取得に失敗しても、ログ表示自体は継続する
+    console.error(err);
+  }
+}
+
+// JST(日本標準時)のISO文字列 <-> datetime-local入力値の相互変換
+// datetime-localの値は常に「日本時間の壁時計時刻」として扱う(閲覧者の端末のタイムゾーンに依存しない)
+function isoToJstInputValue(iso) {
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(new Date(iso));
+  const map = {};
+  parts.forEach((p) => { map[p.type] = p.value; });
+  return `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}`;
+}
+function jstInputValueToIso(value) {
+  return new Date(`${value}:00+09:00`).toISOString();
+}
+
+let pendingChanges = {}; // { logId: "YYYY-MM-DDTHH:MM" }
+let selectedIds = new Set();
+
+function updatePendingUi() {
+  const count = Object.keys(pendingChanges).length;
+  document.getElementById('pendingCount').textContent = count;
+  document.getElementById('saveChangesBtn').disabled = count === 0;
+  document.getElementById('discardChangesBtn').disabled = count === 0;
+}
+
+function updateSelectionUi() {
+  document.getElementById('selectedCount').textContent = selectedIds.size;
+  document.getElementById('deleteSelectedBtn').disabled = selectedIds.size === 0;
+  const all = document.querySelectorAll('.log-select-checkbox');
+  const selectAll = document.getElementById('selectAllCheckbox');
+  selectAll.checked = all.length > 0 && selectedIds.size === all.length;
+}
+
+async function loadLogs() {
+  const tbody = document.getElementById('logTableBody');
+  tbody.innerHTML = '<tr><td colspan="8" class="text-muted">読み込み中...</td></tr>';
+  pendingChanges = {};
+  selectedIds = new Set();
+  updatePendingUi();
+  updateSelectionUi();
+  document.getElementById('bulkEditMsg').innerHTML = '';
+
+  const params = new URLSearchParams();
+  const employee_id = document.getElementById('filterEmployee').value;
+  const from = document.getElementById('filterFrom').value;
+  const to = document.getElementById('filterTo').value;
+  if (employee_id) params.set('employee_id', employee_id);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+
+  try {
+    const data = await Api.request(`/admin/logs?${params.toString()}`);
+
+    const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+    const todayCount = data.logs.filter((l) => {
+      const d = new Date(l.timestamp).toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+      return d === todayStr;
+    }).length;
+    document.getElementById('statTodayLogs').textContent = todayCount;
+
+    if (!data.logs.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-muted">記録がありません。</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = data.logs.map((l) => {
+      const inputValue = isoToJstInputValue(l.timestamp);
+      const site = l.note ? l.note : '<span class="text-muted">-</span>';
+      const remarks = l.remarks ? l.remarks : '<span class="text-muted">-</span>';
+      return `<tr>
+        <td><input type="checkbox" class="log-select-checkbox" data-id="${l.id}"></td>
+        <td>${l.employee_code}</td>
+        <td>${l.employee_name}</td>
+        <td><span class="badge ${l.type}">${l.label}</span></td>
+        <td>${site}</td>
+        <td>${remarks}</td>
+        <td><input type="datetime-local" class="log-edit-input" data-id="${l.id}" data-original="${inputValue}" value="${inputValue}"></td>
+        <td><button type="button" class="link-btn" data-delete-one="${l.id}" style="color:var(--color-danger);">削除</button></td>
+      </tr>`;
+    }).join('');
+
+    tbody.querySelectorAll('.log-edit-input').forEach((input) => {
+      input.addEventListener('change', () => {
+        const id = input.dataset.id;
+        if (input.value && input.value !== input.dataset.original) {
+          pendingChanges[id] = input.value;
+          input.classList.add('log-edit-dirty');
+        } else {
+          delete pendingChanges[id];
+          input.classList.remove('log-edit-dirty');
+        }
+        updatePendingUi();
+      });
+    });
+
+    tbody.querySelectorAll('.log-select-checkbox').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) selectedIds.add(cb.dataset.id);
+        else selectedIds.delete(cb.dataset.id);
+        updateSelectionUi();
+      });
+    });
+
+    tbody.querySelectorAll('[data-delete-one]').forEach((btn) => {
+      btn.addEventListener('click', () => deleteSingleLog(btn.dataset.deleteOne));
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" class="error-msg">${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById('selectAllCheckbox').addEventListener('change', (e) => {
+  const checked = e.target.checked;
+  document.querySelectorAll('.log-select-checkbox').forEach((cb) => {
+    cb.checked = checked;
+    if (checked) selectedIds.add(cb.dataset.id);
+    else selectedIds.delete(cb.dataset.id);
+  });
+  updateSelectionUi();
+});
+
+async function deleteSingleLog(id) {
+  if (!window.confirm('この打刻データを削除しますか?この操作は元に戻せません。')) return;
+  try {
+    await Api.request(`/admin/logs/${id}`, { method: 'DELETE' });
+    document.getElementById('bulkEditMsg').innerHTML = '<div class="success-msg">1件の打刻を削除しました。</div>';
+    await loadLogs();
+  } catch (err) {
+    document.getElementById('bulkEditMsg').innerHTML = `<div class="error-msg">${err.message}</div>`;
+  }
+}
+
+document.getElementById('deleteSelectedBtn').addEventListener('click', async () => {
+  const ids = Array.from(selectedIds);
+  if (!ids.length) return;
+  if (!window.confirm(`選択した${ids.length}件の打刻データを削除しますか?この操作は元に戻せません。`)) return;
+
+  const btn = document.getElementById('deleteSelectedBtn');
+  btn.disabled = true;
+
+  try {
+    const result = await Api.request('/admin/logs', {
+      method: 'DELETE',
+      body: { ids: ids.map(Number) },
+    });
+    document.getElementById('bulkEditMsg').innerHTML = `<div class="success-msg">${result.deleted}件の打刻を削除しました。</div>`;
+    await loadLogs();
+  } catch (err) {
+    btn.disabled = false;
+    document.getElementById('bulkEditMsg').innerHTML = `<div class="error-msg">${err.message}</div>`;
+  }
+});
+
+document.getElementById('discardChangesBtn').addEventListener('click', () => {
+  document.querySelectorAll('.log-edit-input').forEach((input) => {
+    input.value = input.dataset.original;
+    input.classList.remove('log-edit-dirty');
+  });
+  pendingChanges = {};
+  updatePendingUi();
+  document.getElementById('bulkEditMsg').innerHTML = '';
+});
+
+document.getElementById('saveChangesBtn').addEventListener('click', async () => {
+  const ids = Object.keys(pendingChanges);
+  if (!ids.length) return;
+
+  const btn = document.getElementById('saveChangesBtn');
+  const originalLabel = btn.innerHTML;
+  btn.disabled = true;
+  btn.textContent = '保存中...';
+
+  const updates = ids.map((id) => ({ id: Number(id), timestamp: jstInputValueToIso(pendingChanges[id]) }));
+
+  try {
+    const result = await Api.request('/admin/logs/bulk', { method: 'PUT', body: { updates } });
+    const msgBox = document.getElementById('bulkEditMsg');
+    if (result.errors && result.errors.length) {
+      msgBox.innerHTML = `<div class="error-msg">${result.updated}件を更新しましたが、${result.errors.length}件でエラーが発生しました。</div>`;
+    } else {
+      msgBox.innerHTML = `<div class="success-msg">${result.updated}件の打刻を更新しました。</div>`;
+    }
+    await loadLogs(); // 内部で pendingChanges がリセットされ、ボタンの見た目も更新される
+  } catch (err) {
+    btn.innerHTML = originalLabel;
+    btn.disabled = false;
+    document.getElementById('bulkEditMsg').innerHTML = `<div class="error-msg">${err.message}</div>`;
+  }
+});
+
+document.getElementById('applyFilterBtn').addEventListener('click', loadLogs);
+
+document.getElementById('csvBtn').addEventListener('click', () => {
+  const params = new URLSearchParams();
+  const employee_id = document.getElementById('filterEmployee').value;
+  const from = document.getElementById('filterFrom').value;
+  const to = document.getElementById('filterTo').value;
+  if (employee_id) params.set('employee_id', employee_id);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+
+  const token = Api.getToken();
+  // トークンをクエリに付けてダウンロード用リンクを開く簡易対応
+  fetch(`/api/admin/logs/csv?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+    .then((res) => res.blob())
+    .then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'attendance_logs.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+});
+
+// 初期表示: 直近30日
+const today = new Date();
+const past = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+document.getElementById('filterTo').value = today.toISOString().slice(0, 10);
+document.getElementById('filterFrom').value = past.toISOString().slice(0, 10);
+
+(async () => {
+  await loadEmployeeOptions();
+  await loadLogs();
+})();
+</script>
+</body>
+</html>

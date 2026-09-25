@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>マスタ管理 | 三桜 勤怠管理システム</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="app wide">
+  <header class="topbar">
+    <h1>マスタ管理</h1>
+    <div class="user-info">
+      <span id="userName"></span>
+      <button class="logout-btn" id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <nav class="admin-subnav">
+    <a href="/admin.html">勤怠ログ</a>
+    <a href="/employees.html">社員管理</a>
+    <a href="/master.html" class="active">マスタ管理</a>
+  </nav>
+
+  <main>
+    <div class="card">
+      <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+        事業部マスタ
+        <button class="btn small" id="newDivisionBtn">＋ 事業部を追加</button>
+      </div>
+      <p class="text-muted" style="margin-top:-6px;">社員管理画面の「事業部」欄はここに登録した名称から選択します。</p>
+      <p class="text-muted" style="margin-top:2px;">↑↓ボタンで表示順(社員管理画面のプルダウン順)を変更できます。</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>並び替え</th><th>事業部名</th><th>所属社員数</th><th>登録日</th><th>操作</th></tr>
+          </thead>
+          <tbody id="divisionTableBody">
+            <tr><td colspan="5" class="text-muted">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">権限マスタ</div>
+      <p class="text-muted" style="margin-top:-6px;">権限はシステムの動作に直結するため、この2種類に固定されています。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>権限</th><th>説明</th></tr></thead>
+          <tbody>
+            <tr><td><span class="role-tag employee">一般社員</span></td><td>打刻・自分の履歴閲覧のみ利用できます。</td></tr>
+            <tr><td><span class="role-tag admin">管理者</span></td><td>勤怠ログ・社員管理・マスタ管理を利用できます。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">状態マスタ</div>
+      <p class="text-muted" style="margin-top:-6px;">社員アカウントの状態はこの2種類に固定されています。「無効」にするとログインできなくなります。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>状態</th><th>説明</th></tr></thead>
+          <tbody>
+            <tr><td><span class="text-muted">有効</span></td><td>ログインして打刻・各種機能を利用できます。</td></tr>
+            <tr><td><span class="inactive-tag">無効</span></td><td>ログインできません。退職者・休職者などに設定します。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 事業部追加/編集モーダル -->
+<div class="modal-overlay hidden" id="divisionModal">
+  <div class="modal-box">
+    <h3 id="divisionModalTitle">事業部を追加</h3>
+    <form id="divisionForm">
+      <input type="hidden" id="divisionId">
+      <label for="divisionName">事業部名</label>
+      <input type="text" id="divisionName" required placeholder="例: 製造事業部">
+      <div id="divisionModalError" class="error-msg hidden"></div>
+      <div style="display:flex; gap:10px; margin-top:20px;">
+        <button type="button" class="btn secondary" id="cancelDivisionModalBtn" style="margin-top:0;">キャンセル</button>
+        <button type="submit" class="btn" style="margin-top:0;">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+Api.requireAdmin();
+const employee = Api.getEmployee();
+document.getElementById('userName').textContent = `${employee.name} (管理者)`;
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  Api.clearSession();
+  location.href = '/index.html';
+});
+
+let divisionsCache = [];
+
+function renderDivisionTable() {
+  const tbody = document.getElementById('divisionTableBody');
+  if (!divisionsCache.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-muted">事業部がまだ登録されていません。「事業部を追加」から登録してください。</td></tr>';
+    return;
+  }
+  tbody.innerHTML = divisionsCache.map((d, i) => {
+    const created = d.created_at ? d.created_at.slice(0, 10) : '-';
+    const isFirst = i === 0;
+    const isLast = i === divisionsCache.length - 1;
+    return `
+      <tr>
+        <td style="white-space:nowrap;">
+          <button class="link-btn" data-move-up="${d.id}" ${isFirst ? 'disabled' : ''} title="上へ">↑</button>
+          <button class="link-btn" data-move-down="${d.id}" ${isLast ? 'disabled' : ''} title="下へ">↓</button>
+        </td>
+        <td>${d.name}</td>
+        <td>${d.employee_count}名</td>
+        <td>${created}</td>
+        <td>
+          <button class="link-btn" data-edit="${d.id}">編集</button>
+          <button class="link-btn" data-delete="${d.id}" style="color:var(--color-danger);">削除</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  tbody.querySelectorAll('[data-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => openDivisionModal(btn.dataset.edit));
+  });
+  tbody.querySelectorAll('[data-delete]').forEach((btn) => {
+    btn.addEventListener('click', () => deleteDivision(btn.dataset.delete));
+  });
+  tbody.querySelectorAll('[data-move-up]').forEach((btn) => {
+    btn.addEventListener('click', () => moveDivision(btn.dataset.moveUp, -1));
+  });
+  tbody.querySelectorAll('[data-move-down]').forEach((btn) => {
+    btn.addEventListener('click', () => moveDivision(btn.dataset.moveDown, 1));
+  });
+}
+
+async function moveDivision(id, delta) {
+  const index = divisionsCache.findIndex((d) => String(d.id) === String(id));
+  const target = index + delta;
+  if (index === -1 || target < 0 || target >= divisionsCache.length) return;
+
+  const reordered = divisionsCache.slice();
+  const [moved] = reordered.splice(index, 1);
+  reordered.splice(target, 0, moved);
+
+  // 楽観的にすぐ表示を入れ替え、失敗したら再読み込みで元に戻す
+  divisionsCache = reordered;
+  renderDivisionTable();
+
+  try {
+    const data = await Api.request('/admin/divisions/reorder', {
+      method: 'PUT',
+      body: { ids: reordered.map((d) => d.id) },
+    });
+    divisionsCache = data.divisions;
+    renderDivisionTable();
+  } catch (err) {
+    window.alert(err.message);
+    await loadDivisions();
+  }
+}
+
+async function loadDivisions() {
+  const tbody = document.getElementById('divisionTableBody');
+  try {
+    const data = await Api.request('/admin/divisions');
+    divisionsCache = data.divisions;
+    renderDivisionTable();
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="4" class="error-msg">${err.message}</td></tr>`;
+  }
+}
+
+const divisionModal = document.getElementById('divisionModal');
+const divisionForm = document.getElementById('divisionForm');
+const divisionModalError = document.getElementById('divisionModalError');
+
+function openDivisionModal(id) {
+  const isEdit = !!id;
+  const existing = isEdit ? divisionsCache.find((d) => String(d.id) === String(id)) : null;
+  document.getElementById('divisionModalTitle').textContent = isEdit ? '事業部を編集' : '事業部を追加';
+  document.getElementById('divisionId').value = isEdit ? id : '';
+  document.getElementById('divisionName').value = existing ? existing.name : '';
+  divisionModalError.classList.add('hidden');
+  divisionModal.classList.remove('hidden');
+}
+
+document.getElementById('newDivisionBtn').addEventListener('click', () => openDivisionModal(null));
+document.getElementById('cancelDivisionModalBtn').addEventListener('click', () => divisionModal.classList.add('hidden'));
+
+divisionForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  divisionModalError.classList.add('hidden');
+  const id = document.getElementById('divisionId').value;
+  const name = document.getElementById('divisionName').value.trim();
+
+  try {
+    if (id) {
+      await Api.request(`/admin/divisions/${id}`, { method: 'PUT', body: { name } });
+    } else {
+      await Api.request('/admin/divisions', { method: 'POST', body: { name } });
+    }
+    divisionModal.classList.add('hidden');
+    await loadDivisions();
+  } catch (err) {
+    divisionModalError.textContent = err.message;
+    divisionModalError.classList.remove('hidden');
+  }
+});
+
+async function deleteDivision(id) {
+  const division = divisionsCache.find((d) => String(d.id) === String(id));
+  if (!division) return;
+  if (!window.confirm(`「${division.name}」を削除しますか?`)) return;
+
+  try {
+    await Api.request(`/admin/divisions/${id}`, { method: 'DELETE' });
+    await loadDivisions();
+  } catch (err) {
+    window.alert(err.message);
+  }
+}
+
+loadDivisions();
+</script>
+</body>
+</html>

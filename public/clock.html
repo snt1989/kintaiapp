@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>打刻 | 三桜 勤怠管理システム</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;800&family=Zen+Kaku+Gothic+New:wght@700;800&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1>勤怠打刻</h1>
+    <div class="user-info">
+      <span id="userName"></span>
+      <button class="logout-btn" id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="hero-card">
+      <div class="hero-top">
+        <div>
+          <div class="greeting" id="greeting">おかえりなさい</div>
+          <div class="division-label" id="divisionLabel" hidden></div>
+        </div>
+        <div class="status-pill" id="statusPill"><span class="dot"></span><span id="statusLabel">読み込み中</span></div>
+      </div>
+
+      <div class="clock-display">
+        <div class="time" id="nowTime">--:--:--</div>
+        <div class="date" id="nowDate">----年--月--日(-)</div>
+        <div class="work-time" id="workTime">本日の勤務時間: --時間--分</div>
+      </div>
+
+      <div class="site-field">
+        <label for="siteName">現場名(任意)</label>
+        <input type="text" id="siteName" placeholder="例: 〇〇工場 A棟" autocomplete="off">
+      </div>
+
+      <div class="site-field">
+        <label for="remarks">備考(任意)</label>
+        <input type="text" id="remarks" placeholder="例: 電車遅延のため出勤が遅れました" autocomplete="off">
+      </div>
+
+      <div class="punch-grid">
+        <button class="punch-btn in" data-type="clock_in">
+          <span class="icon"><svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg></span><span class="punch-label">出勤</span>
+        </button>
+        <button class="punch-btn out" data-type="clock_out">
+          <span class="icon"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span><span class="punch-label">退勤</span>
+        </button>
+        <button class="punch-btn bstart" data-type="break_start">
+          <span class="icon"><svg viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg></span><span class="punch-label">休憩開始</span>
+        </button>
+        <button class="punch-btn bend" data-type="break_end">
+          <span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg></span><span class="punch-label">休憩終了</span>
+        </button>
+      </div>
+
+      <div id="resultMsg"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">本日の打刻記録</div>
+      <div class="today-log-list" id="todayLogList">
+        <div class="text-muted">読み込み中...</div>
+      </div>
+    </div>
+  </main>
+
+  <nav class="tabbar">
+    <a href="/clock.html" class="active"><span class="tab-icon">⏱️</span>打刻</a>
+    <a href="/history.html"><span class="tab-icon">📋</span>履歴</a>
+  </nav>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+Api.requireLogin();
+const employee = Api.getEmployee();
+document.getElementById('userName').textContent = `${employee.name} (${employee.employee_code})`;
+document.getElementById('greeting').textContent = `${employee.name} さん、おかえりなさい`;
+
+const divisionLabel = document.getElementById('divisionLabel');
+if (employee.division) {
+  divisionLabel.textContent = employee.division;
+  divisionLabel.hidden = false;
+}
+
+// 現場名は直前に入力した内容を次回の打刻画面でも初期表示する(端末ローカルに保存)
+const SITE_NAME_KEY = 'sanoh_attendance_site_name';
+const siteNameInput = document.getElementById('siteName');
+siteNameInput.value = localStorage.getItem(SITE_NAME_KEY) || '';
+siteNameInput.addEventListener('input', () => {
+  localStorage.setItem(SITE_NAME_KEY, siteNameInput.value);
+});
+
+// 備考はその打刻限りのメモのため、次回の打刻画面には持ち越さない
+const remarksInput = document.getElementById('remarks');
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  Api.clearSession();
+  location.href = '/index.html';
+});
+
+// 本日の打刻ログ(出勤〜退勤の合計から休憩時間を差し引いて勤務時間を算出する)
+let todayLogsCache = [];
+
+function computeWorkedMinutes(logs, now) {
+  let workedMs = 0;
+  let breakMs = 0;
+  let workStart = null;
+  let breakStart = null;
+
+  logs
+    .slice()
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    .forEach((l) => {
+      const t = new Date(l.timestamp);
+      if (l.type === 'clock_in') {
+        workStart = t;
+      } else if (l.type === 'clock_out') {
+        if (workStart) { workedMs += t - workStart; workStart = null; }
+      } else if (l.type === 'break_start') {
+        breakStart = t;
+      } else if (l.type === 'break_end') {
+        if (breakStart) { breakMs += t - breakStart; breakStart = null; }
+      }
+    });
+
+  // まだ出勤中(退勤していない)場合は、現在時刻までを勤務時間に含める
+  if (workStart) workedMs += now - workStart;
+  // まだ休憩中(休憩終了していない)場合は、現在時刻までを休憩時間に含める
+  if (breakStart) breakMs += now - breakStart;
+
+  const minutes = Math.max(0, Math.round((workedMs - breakMs) / 60000));
+  return minutes;
+}
+
+function formatWorkedMinutes(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h}時間${m}分`;
+}
+
+function updateWorkTime() {
+  const el = document.getElementById('workTime');
+  if (!todayLogsCache.length) {
+    el.textContent = '本日の勤務時間: 0時間0分';
+    return;
+  }
+  const minutes = computeWorkedMinutes(todayLogsCache, new Date());
+  el.textContent = `本日の勤務時間: ${formatWorkedMinutes(minutes)}`;
+}
+
+// 時計表示
+function updateClock() {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  document.getElementById('nowTime').textContent = `${hh}:${mm}:${ss}`;
+
+  const weekday = ['日', '月', '火', '水', '木', '金', '土'][now.getDay()];
+  document.getElementById('nowDate').textContent =
+    `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日(${weekday})`;
+
+  updateWorkTime();
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+const resultMsg = document.getElementById('resultMsg');
+
+function showResult(text, ok) {
+  resultMsg.innerHTML = `<div class="${ok ? 'success-msg' : 'error-msg'}">${text}</div>`;
+  setTimeout(() => { resultMsg.innerHTML = ''; }, 4000);
+}
+
+// 状態(勤務中/休憩中/未出勤)に応じて、押せるボタンだけを有効にする
+function applyStatus(status) {
+  const pill = document.getElementById('statusPill');
+  const label = document.getElementById('statusLabel');
+
+  let text = '未出勤';
+  let variant = 'off';
+  if (status.onDuty && status.onBreak) { text = '休憩中'; variant = 'break'; }
+  else if (status.onDuty) { text = '勤務中'; variant = 'working'; }
+
+  label.textContent = text;
+  pill.className = 'status-pill ' + variant;
+
+  const enabled = {
+    clock_in: !status.onDuty,
+    clock_out: status.onDuty,
+    break_start: status.onDuty && !status.onBreak,
+    break_end: status.onBreak,
+  };
+  document.querySelectorAll('.punch-btn').forEach((btn) => {
+    btn.disabled = !enabled[btn.dataset.type];
+  });
+}
+
+async function loadTodayStatus() {
+  const listEl = document.getElementById('todayLogList');
+  try {
+    const data = await Api.request('/attendance/today-status');
+    applyStatus(data.status);
+    todayLogsCache = data.logs;
+    updateWorkTime();
+
+    if (!data.logs.length) {
+      listEl.innerHTML = '<div class="text-muted">本日の打刻はまだありません。</div>';
+      return;
+    }
+    listEl.innerHTML = data.logs
+      .map((l) => {
+        const t = new Date(l.timestamp);
+        const time = t.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' });
+        const site = l.note ? `<span class="site-tag">${l.note}</span>` : '';
+        const remarksLine = l.remarks ? `<div class="remarks-tag">備考: ${l.remarks}</div>` : '';
+        return `<div class="log-entry"><div class="log-row"><span class="log-row-left"><span class="badge ${l.type}">${l.label}</span>${site}</span><span class="tabular-time">${time}</span></div>${remarksLine}</div>`;
+      })
+      .join('');
+  } catch (err) {
+    listEl.innerHTML = `<div class="error-msg">${err.message}</div>`;
+  }
+}
+loadTodayStatus();
+
+document.querySelectorAll('.punch-btn').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    const type = btn.dataset.type;
+    const note = siteNameInput.value.trim();
+    const remarks = remarksInput.value.trim();
+    document.querySelectorAll('.punch-btn').forEach((b) => (b.disabled = true));
+    try {
+      const data = await Api.request('/attendance/clock', {
+        method: 'POST',
+        body: { type, note, remarks },
+      });
+      showResult(`${data.log.label}を記録しました。`, true);
+      applyStatus(data.status);
+      remarksInput.value = '';
+      await loadTodayStatus();
+    } catch (err) {
+      showResult(err.message, false);
+      await loadTodayStatus(); // サーバー側の最新状態に合わせてボタンの有効/無効を再同期する
+    }
+  });
+});
+</script>
+</body>
+</html>

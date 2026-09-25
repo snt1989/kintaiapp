@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>履歴 | 三桜 勤怠管理システム</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1>打刻履歴</h1>
+    <div class="user-info">
+      <span id="userName"></span>
+      <button class="logout-btn" id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="filter-row">
+        <div>
+          <label for="from">開始日</label>
+          <input type="date" id="from">
+        </div>
+        <div>
+          <label for="to">終了日</label>
+          <input type="date" id="to">
+        </div>
+        <button class="btn small" id="filterBtn">絞り込み</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">日別勤務時間</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>日付</th><th>勤務時間</th></tr>
+          </thead>
+          <tbody id="dailySummaryBody">
+            <tr><td colspan="2" class="text-muted">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">打刻明細</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>日付</th><th>時刻</th><th>種別</th><th>現場名</th><th>備考</th></tr>
+          </thead>
+          <tbody id="logTableBody">
+            <tr><td colspan="5" class="text-muted">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <nav class="tabbar">
+    <a href="/clock.html"><span class="tab-icon">⏱️</span>打刻</a>
+    <a href="/history.html" class="active"><span class="tab-icon">📋</span>履歴</a>
+  </nav>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+Api.requireLogin();
+const employee = Api.getEmployee();
+document.getElementById('userName').textContent = `${employee.name} (${employee.employee_code})`;
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  Api.clearSession();
+  location.href = '/index.html';
+});
+
+// デフォルトは直近30日
+const today = new Date();
+const past = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+document.getElementById('to').value = today.toISOString().slice(0, 10);
+document.getElementById('from').value = past.toISOString().slice(0, 10);
+
+// 出勤〜退勤の合計から休憩時間を差し引いて勤務時間を算出する(未退勤の場合は現在時刻までを計上)
+function computeWorkedMinutes(logs, now) {
+  let workedMs = 0;
+  let breakMs = 0;
+  let workStart = null;
+  let breakStart = null;
+
+  logs
+    .slice()
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    .forEach((l) => {
+      const t = new Date(l.timestamp);
+      if (l.type === 'clock_in') {
+        workStart = t;
+      } else if (l.type === 'clock_out') {
+        if (workStart) { workedMs += t - workStart; workStart = null; }
+      } else if (l.type === 'break_start') {
+        breakStart = t;
+      } else if (l.type === 'break_end') {
+        if (breakStart) { breakMs += t - breakStart; breakStart = null; }
+      }
+    });
+
+  if (workStart) workedMs += now - workStart;
+  if (breakStart) breakMs += now - breakStart;
+
+  return Math.max(0, Math.round((workedMs - breakMs) / 60000));
+}
+
+function formatWorkedMinutes(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h}時間${m}分`;
+}
+
+async function loadHistory() {
+  const tbody = document.getElementById('logTableBody');
+  const summaryBody = document.getElementById('dailySummaryBody');
+  tbody.innerHTML = '<tr><td colspan="5" class="text-muted">読み込み中...</td></tr>';
+  summaryBody.innerHTML = '<tr><td colspan="2" class="text-muted">読み込み中...</td></tr>';
+
+  const from = document.getElementById('from').value;
+  const to = document.getElementById('to').value;
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+
+  try {
+    const data = await Api.request(`/attendance/my?${params.toString()}`);
+    if (!data.logs.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted">記録がありません。</td></tr>';
+      summaryBody.innerHTML = '<tr><td colspan="2" class="text-muted">記録がありません。</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.logs
+      .map((l) => {
+        const t = new Date(l.timestamp);
+        const date = t.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' });
+        const time = t.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' });
+        const site = l.note ? l.note : '<span class="text-muted">-</span>';
+        const remarks = l.remarks ? l.remarks : '<span class="text-muted">-</span>';
+        return `<tr><td>${date}</td><td>${time}</td><td><span class="badge ${l.type}">${l.label}</span></td><td>${site}</td><td>${remarks}</td></tr>`;
+      })
+      .join('');
+
+    // JST基準の日付ごとにログをグループ化し、各日の勤務時間を算出する
+    const byDate = {};
+    data.logs.forEach((l) => {
+      const dateKey = new Date(l.timestamp).toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+      if (!byDate[dateKey]) byDate[dateKey] = [];
+      byDate[dateKey].push(l);
+    });
+    const now = new Date();
+    const dateKeys = Object.keys(byDate).sort().reverse();
+    summaryBody.innerHTML = dateKeys
+      .map((dateKey) => {
+        const minutes = computeWorkedMinutes(byDate[dateKey], now);
+        const displayDate = new Date(`${dateKey}T00:00:00+09:00`).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' });
+        return `<tr><td>${displayDate}</td><td class="tabular-time">${formatWorkedMinutes(minutes)}</td></tr>`;
+      })
+      .join('');
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5" class="error-msg">${err.message}</td></tr>`;
+    summaryBody.innerHTML = `<tr><td colspan="2" class="error-msg">${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById('filterBtn').addEventListener('click', loadHistory);
+loadHistory();
+</script>
+</body>
+</html>

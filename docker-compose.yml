@@ -1,0 +1,28 @@
+version: "3.8"
+
+services:
+  attendance:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET:-please-change-this-to-a-long-random-secret-string}
+      - POSTGRES_URL=postgres://attendance:attendance@db:5432/attendance
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=attendance
+      - POSTGRES_PASSWORD=attendance
+      - POSTGRES_DB=attendance
+    volumes:
+      # 勤怠データを永続化するボリューム(コンテナを再作成してもデータは消えません)
+      - attendance_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  attendance_pgdata:

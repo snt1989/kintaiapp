@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>三桜 勤怠管理システム</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="center-card">
+  <div class="card login-card">
+    <h1>株式会社三桜</h1>
+    <div class="subtitle">勤怠管理システム ログイン</div>
+
+    <form id="loginForm">
+      <label for="employee_code">社員番号</label>
+      <input type="text" id="employee_code" inputmode="text" autocomplete="username" required autofocus>
+
+      <label for="password">パスワード</label>
+      <input type="password" id="password" autocomplete="current-password" required>
+
+      <button type="submit" class="btn" id="loginBtn">ログイン</button>
+    </form>
+
+    <div id="errorBox" class="error-msg hidden"></div>
+
+    <div style="text-align:center;margin-top:18px;">
+      <a href="/register.html" style="font-size:13px;color:var(--color-text-muted);">初めての方はこちら(社員登録)</a>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  // 既にログイン済みならそれぞれのトップ画面へ
+  const existing = Api.getEmployee();
+  if (Api.getToken() && existing) {
+    location.href = existing.role === 'admin' ? '/admin.html' : '/clock.html';
+  }
+
+  const form = document.getElementById('loginForm');
+  const errorBox = document.getElementById('errorBox');
+  const loginBtn = document.getElementById('loginBtn');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBox.classList.add('hidden');
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'ログイン中...';
+
+    try {
+      const employee_code = document.getElementById('employee_code').value.trim();
+      const password = document.getElementById('password').value;
+      const data = await Api.request('/auth/login', {
+        method: 'POST',
+        body: { employee_code, password },
+      });
+      Api.setSession(data.token, data.employee);
+      location.href = data.employee.role === 'admin' ? '/admin.html' : '/clock.html';
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.classList.remove('hidden');
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'ログイン';
+    }
+  });
+</script>
+</body>
+</html>

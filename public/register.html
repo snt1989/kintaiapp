@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>社員登録 | 三桜 勤怠管理システム</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="center-card">
+  <div class="card login-card" id="formCard">
+    <h1>株式会社三桜</h1>
+    <div class="subtitle">社員登録(セルフ登録)</div>
+
+    <form id="registerForm">
+      <label for="name">氏名</label>
+      <input type="text" id="name" autocomplete="name" required autofocus>
+
+      <label for="division">事業部</label>
+      <select id="division">
+        <option value="">選択してください(任意)</option>
+      </select>
+
+      <label for="password">パスワード(3文字以上)</label>
+      <input type="password" id="password" autocomplete="new-password" required>
+
+      <label for="passwordConfirm">パスワード(確認)</label>
+      <input type="password" id="passwordConfirm" autocomplete="new-password" required>
+
+      <button type="submit" class="btn" id="registerBtn">登録する</button>
+    </form>
+
+    <div id="errorBox" class="error-msg hidden"></div>
+
+    <div style="text-align:center;margin-top:18px;">
+      <a href="/index.html" style="font-size:13px;color:var(--color-text-muted);">アカウントをお持ちの方はこちら(ログイン)</a>
+    </div>
+  </div>
+
+  <div class="card login-card hidden" id="doneCard">
+    <h1>登録が完了しました</h1>
+    <div class="subtitle">下記の社員番号でログインできます</div>
+
+    <div class="success-msg" style="text-align:center;font-size:15px;margin-top:8px;">
+      社員番号: <strong id="doneCode" style="font-size:20px;letter-spacing:.03em;"></strong>
+    </div>
+    <div style="text-align:center;color:var(--color-text-muted);font-size:12.5px;margin-top:10px;">
+      次回以降はこの社員番号とパスワードでログインしてください。忘れないよう控えておいてください。
+    </div>
+
+    <button type="button" class="btn" id="proceedBtn">打刻画面へ進む</button>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  // 既にログイン済みならそれぞれのトップ画面へ
+  const existing = Api.getEmployee();
+  if (Api.getToken() && existing) {
+    location.href = existing.role === 'admin' ? '/admin.html' : '/clock.html';
+  }
+
+  const form = document.getElementById('registerForm');
+  const errorBox = document.getElementById('errorBox');
+  const registerBtn = document.getElementById('registerBtn');
+  const divisionSelect = document.getElementById('division');
+  const formCard = document.getElementById('formCard');
+  const doneCard = document.getElementById('doneCard');
+  const doneCode = document.getElementById('doneCode');
+  const proceedBtn = document.getElementById('proceedBtn');
+
+  // 事業部選択肢を読み込み(未ログインでも取得可能なAPI)
+  (async () => {
+    try {
+      const data = await Api.request('/auth/divisions');
+      data.divisions.forEach((d) => {
+        const opt = document.createElement('option');
+        opt.value = d.name;
+        opt.textContent = d.name;
+        divisionSelect.appendChild(opt);
+      });
+    } catch (err) {
+      // 事業部一覧が取得できなくても登録自体は続行できるようにする
+    }
+  })();
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBox.classList.add('hidden');
+
+    const name = document.getElementById('name').value.trim();
+    const division = divisionSelect.value;
+    const password = document.getElementById('password').value;
+    const passwordConfirm = document.getElementById('passwordConfirm').value;
+
+    if (password !== passwordConfirm) {
+      errorBox.textContent = 'パスワードが一致しません。';
+      errorBox.classList.remove('hidden');
+      return;
+    }
+
+    registerBtn.disabled = true;
+    registerBtn.textContent = '登録中...';
+
+    try {
+      const data = await Api.request('/auth/register', {
+        method: 'POST',
+        body: { name, password, division },
+      });
+      Api.setSession(data.token, data.employee);
+      doneCode.textContent = data.employee.employee_code;
+      formCard.classList.add('hidden');
+      doneCard.classList.remove('hidden');
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.classList.remove('hidden');
+      registerBtn.disabled = false;
+      registerBtn.textContent = '登録する';
+    }
+  });
+
+  proceedBtn.addEventListener('click', () => {
+    location.href = '/clock.html';
+  });
+</script>
+</body>
+</html>

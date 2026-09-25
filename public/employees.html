@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>社員管理 | 三桜 勤怠管理システム</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="app wide">
+  <header class="topbar">
+    <h1>社員管理</h1>
+    <div class="user-info">
+      <span id="userName"></span>
+      <button class="logout-btn" id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <nav class="admin-subnav">
+    <a href="/admin.html">勤怠ログ</a>
+    <a href="/employees.html" class="active">社員管理</a>
+    <a href="/master.html">マスタ管理</a>
+  </nav>
+
+  <main>
+    <div class="grid-2" style="margin-bottom:16px;">
+      <div class="stat-box">
+        <div class="num" id="statTotal">-</div>
+        <div class="label">登録社員数</div>
+      </div>
+      <div class="stat-box">
+        <div class="num" id="statActive">-</div>
+        <div class="label">有効な社員数</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="filter-row" style="margin-bottom:0;">
+        <div>
+          <label for="searchBox">社員番号・氏名で検索</label>
+          <input type="text" id="searchBox" placeholder="例: E0001、山田">
+        </div>
+        <div>
+          <label for="filterRole">権限</label>
+          <select id="filterRole">
+            <option value="">すべて</option>
+            <option value="employee">一般社員</option>
+            <option value="admin">管理者</option>
+          </select>
+        </div>
+        <div>
+          <label for="filterStatus">状態</label>
+          <select id="filterStatus">
+            <option value="">すべて</option>
+            <option value="1">有効</option>
+            <option value="0">無効</option>
+          </select>
+        </div>
+        <div>
+          <label for="filterDivision">事業部</label>
+          <select id="filterDivision">
+            <option value="">すべて</option>
+          </select>
+        </div>
+        <button class="btn small" id="newEmployeeBtn">＋ 社員を追加</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="filter-row" style="margin-bottom:10px;align-items:flex-end;">
+        <div>
+          <label for="bulkStatusSelect">状態を一括変更</label>
+          <select id="bulkStatusSelect">
+            <option value="1">有効にする</option>
+            <option value="0">無効にする</option>
+          </select>
+        </div>
+        <button class="btn small secondary" id="bulkStatusBtn" disabled>適用 (<span id="selectedCountA">0</span>)</button>
+        <div>
+          <label for="bulkDivisionSelect">事業部を一括変更</label>
+          <select id="bulkDivisionSelect">
+            <option value="">未設定にする</option>
+          </select>
+        </div>
+        <button class="btn small secondary" id="bulkDivisionBtn" disabled>適用 (<span id="selectedCountB">0</span>)</button>
+        <button class="btn small danger" id="bulkDeleteBtn" disabled>選択した社員を削除 (<span id="selectedCountC">0</span>)</button>
+      </div>
+      <div id="bulkMsg"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="selectAllCheckbox"></th>
+              <th>社員番号</th><th>氏名</th><th>事業部</th><th>権限</th><th>状態</th><th>登録日</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="employeeTableBody">
+            <tr><td colspan="8" class="text-muted">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 社員追加/編集モーダル -->
+<div class="modal-overlay hidden" id="employeeModal">
+  <div class="modal-box">
+    <h3 id="modalTitle">社員を追加</h3>
+    <form id="employeeForm">
+      <input type="hidden" id="empId">
+      <label for="empCode">社員番号</label>
+      <input type="text" id="empCode" required>
+
+      <label for="empName">氏名</label>
+      <input type="text" id="empName" required>
+
+      <label for="empDivision">事業部</label>
+      <select id="empDivision">
+        <option value="">未設定</option>
+      </select>
+
+      <label for="empRole">権限</label>
+      <select id="empRole">
+        <option value="employee">一般社員</option>
+        <option value="admin">管理者</option>
+      </select>
+
+      <label for="empPassword" id="empPasswordLabel">パスワード(3文字以上)</label>
+      <input type="password" id="empPassword">
+
+      <div id="empActiveWrap" class="hidden">
+        <label for="empActive">状態</label>
+        <select id="empActive">
+          <option value="1">有効</option>
+          <option value="0">無効(ログイン不可)</option>
+        </select>
+      </div>
+
+      <div id="modalError" class="error-msg hidden"></div>
+
+      <div style="display:flex; gap:10px; margin-top:20px;">
+        <button type="button" class="btn secondary" id="cancelModalBtn" style="margin-top:0;">キャンセル</button>
+        <button type="submit" class="btn" style="margin-top:0;">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+Api.requireAdmin();
+const employee = Api.getEmployee();
+document.getElementById('userName').textContent = `${employee.name} (管理者)`;
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  Api.clearSession();
+  location.href = '/index.html';
+});
+
+let employeesCache = [];
+let divisionsCache = [];
+
+async function loadDivisions() {
+  try {
+    const data = await Api.request('/admin/divisions');
+    divisionsCache = data.divisions;
+  } catch (err) {
+    divisionsCache = [];
+  }
+  refreshDivisionOptions();
+}
+
+function refreshDivisionOptions() {
+  const names = divisionsCache.map((d) => d.name);
+
+  const filterSelect = document.getElementById('filterDivision');
+  const currentFilter = filterSelect.value;
+  filterSelect.innerHTML = '<option value="">すべて</option>' +
+    names.map((d) => `<option value="${d}">${d}</option>`).join('');
+  if (names.includes(currentFilter)) filterSelect.value = currentFilter;
+
+  const empDivisionSelect = document.getElementById('empDivision');
+  if (empDivisionSelect) {
+    const currentValue = empDivisionSelect.value;
+    empDivisionSelect.innerHTML = '<option value="">未設定</option>' +
+      names.map((d) => `<option value="${d}">${d}</option>`).join('');
+    if (names.includes(currentValue)) empDivisionSelect.value = currentValue;
+  }
+
+  const bulkDivisionSelect = document.getElementById('bulkDivisionSelect');
+  if (bulkDivisionSelect) {
+    const currentBulk = bulkDivisionSelect.value;
+    bulkDivisionSelect.innerHTML = '<option value="">未設定にする</option>' +
+      names.map((d) => `<option value="${d}">${d}に変更</option>`).join('');
+    if (names.includes(currentBulk)) bulkDivisionSelect.value = currentBulk;
+  }
+}
+
+let selectedIds = new Set();
+
+function updateSelectionUi() {
+  const count = selectedIds.size;
+  ['selectedCountA', 'selectedCountB', 'selectedCountC'].forEach((id) => {
+    document.getElementById(id).textContent = count;
+  });
+  document.getElementById('bulkStatusBtn').disabled = count === 0;
+  document.getElementById('bulkDivisionBtn').disabled = count === 0;
+  document.getElementById('bulkDeleteBtn').disabled = count === 0;
+  const all = document.querySelectorAll('.emp-select-checkbox');
+  const selectAll = document.getElementById('selectAllCheckbox');
+  selectAll.checked = all.length > 0 && selectedIds.size === all.length;
+}
+
+function renderTable() {
+  const tbody = document.getElementById('employeeTableBody');
+  const search = document.getElementById('searchBox').value.trim().toLowerCase();
+  const role = document.getElementById('filterRole').value;
+  const status = document.getElementById('filterStatus').value;
+  const division = document.getElementById('filterDivision').value;
+
+  const filtered = employeesCache.filter((e) => {
+    if (role && e.role !== role) return false;
+    if (status && String(e.active ? 1 : 0) !== status) return false;
+    if (division && e.division !== division) return false;
+    if (search) {
+      const hay = `${e.employee_code} ${e.name}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  // 表示から外れた社員の選択状態は解除する
+  const visibleIds = new Set(filtered.map((e) => String(e.id)));
+  selectedIds.forEach((id) => { if (!visibleIds.has(id)) selectedIds.delete(id); });
+
+  document.getElementById('statTotal').textContent = employeesCache.length;
+  document.getElementById('statActive').textContent = employeesCache.filter((e) => e.active).length;
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-muted">該当する社員がいません。</td></tr>';
+    updateSelectionUi();
+    return;
+  }
+
+  tbody.innerHTML = filtered.map((e) => {
+    const created = e.created_at ? e.created_at.slice(0, 10) : '-';
+    const checked = selectedIds.has(String(e.id)) ? 'checked' : '';
+    return `
+      <tr>
+        <td><input type="checkbox" class="emp-select-checkbox" data-id="${e.id}" ${checked}></td>
+        <td>${e.employee_code}</td>
+        <td>${e.name}</td>
+        <td>${e.division ? e.division : '<span class="text-muted">未設定</span>'}</td>
+        <td><span class="role-tag ${e.role}">${e.role === 'admin' ? '管理者' : '一般社員'}</span></td>
+        <td>${e.active ? '<span class="text-muted">有効</span>' : '<span class="inactive-tag">無効</span>'}</td>
+        <td>${created}</td>
+        <td><button class="link-btn" data-edit="${e.id}">編集</button></td>
+      </tr>
+    `;
+  }).join('');
+
+  tbody.querySelectorAll('[data-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => openEditModal(btn.dataset.edit));
+  });
+
+  tbody.querySelectorAll('.emp-select-checkbox').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) selectedIds.add(cb.dataset.id);
+      else selectedIds.delete(cb.dataset.id);
+      updateSelectionUi();
+    });
+  });
+
+  updateSelectionUi();
+}
+
+document.getElementById('selectAllCheckbox').addEventListener('change', (e) => {
+  const checked = e.target.checked;
+  document.querySelectorAll('.emp-select-checkbox').forEach((cb) => {
+    cb.checked = checked;
+    if (checked) selectedIds.add(cb.dataset.id);
+    else selectedIds.delete(cb.dataset.id);
+  });
+  updateSelectionUi();
+});
+
+document.getElementById('bulkStatusBtn').addEventListener('click', async () => {
+  const ids = Array.from(selectedIds).map(Number);
+  if (!ids.length) return;
+  const active = Number(document.getElementById('bulkStatusSelect').value);
+  const label = active ? '有効' : '無効';
+  const msgBox = document.getElementById('bulkMsg');
+
+  const btn = document.getElementById('bulkStatusBtn');
+  btn.disabled = true;
+  try {
+    const result = await Api.request('/admin/employees/bulk-status', {
+      method: 'PUT',
+      body: { ids, active },
+    });
+    let text = `${result.updated}件の社員を「${label}」に変更しました。`;
+    if (result.skippedSelf) text += ' (自分自身は対象から除外されました)';
+    msgBox.innerHTML = `<div class="success-msg">${text}</div>`;
+    await loadEmployees();
+  } catch (err) {
+    msgBox.innerHTML = `<div class="error-msg">${err.message}</div>`;
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('bulkDivisionBtn').addEventListener('click', async () => {
+  const ids = Array.from(selectedIds).map(Number);
+  if (!ids.length) return;
+  const division = document.getElementById('bulkDivisionSelect').value;
+  const msgBox = document.getElementById('bulkMsg');
+
+  const btn = document.getElementById('bulkDivisionBtn');
+  btn.disabled = true;
+  try {
+    const result = await Api.request('/admin/employees/bulk-division', {
+      method: 'PUT',
+      body: { ids, division },
+    });
+    const label = division || '未設定';
+    msgBox.innerHTML = `<div class="success-msg">${result.updated}件の社員の事業部を「${label}」に変更しました。</div>`;
+    await loadEmployees();
+  } catch (err) {
+    msgBox.innerHTML = `<div class="error-msg">${err.message}</div>`;
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('bulkDeleteBtn').addEventListener('click', async () => {
+  const ids = Array.from(selectedIds).map(Number);
+  if (!ids.length) return;
+  if (!window.confirm(`選択した${ids.length}件の社員を削除しますか?この操作は元に戻せません。`)) return;
+
+  const msgBox = document.getElementById('bulkMsg');
+  const btn = document.getElementById('bulkDeleteBtn');
+  btn.disabled = true;
+
+  try {
+    const result = await Api.request('/admin/employees', {
+      method: 'DELETE',
+      body: { ids },
+    });
+    let text = `${result.deleted}件の社員を削除しました。`;
+    if (result.skipped && result.skipped.length) {
+      text += `<br>${result.skipped.length}件はスキップされました:<br>` +
+        result.skipped.map((s) => `・${s.name || s.id}: ${s.reason}`).join('<br>');
+    }
+    msgBox.innerHTML = `<div class="${result.skipped && result.skipped.length ? 'error-msg' : 'success-msg'}">${text}</div>`;
+    selectedIds.clear();
+    await loadEmployees();
+  } catch (err) {
+    msgBox.innerHTML = `<div class="error-msg">${err.message}</div>`;
+    btn.disabled = false;
+  }
+});
+
+async function loadEmployees() {
+  const tbody = document.getElementById('employeeTableBody');
+  try {
+    const data = await Api.request('/admin/employees');
+    employeesCache = data.employees;
+    renderTable();
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" class="error-msg">${err.message}</td></tr>`;
+  }
+}
+
+['searchBox', 'filterRole', 'filterStatus', 'filterDivision'].forEach((id) => {
+  document.getElementById(id).addEventListener('input', renderTable);
+  document.getElementById(id).addEventListener('change', renderTable);
+});
+
+// ---- 社員追加/編集モーダル ----
+const modal = document.getElementById('employeeModal');
+const form = document.getElementById('employeeForm');
+const modalError = document.getElementById('modalError');
+
+function openNewModal() {
+  document.getElementById('modalTitle').textContent = '社員を追加';
+  document.getElementById('empId').value = '';
+  document.getElementById('empCode').value = '';
+  document.getElementById('empCode').disabled = false;
+  document.getElementById('empName').value = '';
+  document.getElementById('empDivision').value = '';
+  document.getElementById('empRole').value = 'employee';
+  document.getElementById('empPassword').value = '';
+  document.getElementById('empPasswordLabel').textContent = 'パスワード(3文字以上)';
+  document.getElementById('empPassword').required = true;
+  document.getElementById('empActiveWrap').classList.add('hidden');
+  modalError.classList.add('hidden');
+  modal.classList.remove('hidden');
+}
+
+function openEditModal(id) {
+  const e = employeesCache.find((x) => String(x.id) === String(id));
+  if (!e) return;
+  document.getElementById('modalTitle').textContent = '社員を編集';
+  document.getElementById('empId').value = e.id;
+  document.getElementById('empCode').value = e.employee_code;
+  document.getElementById('empCode').disabled = true;
+  document.getElementById('empName').value = e.name;
+  document.getElementById('empDivision').value = e.division || '';
+  document.getElementById('empRole').value = e.role;
+  document.getElementById('empPassword').value = '';
+  document.getElementById('empPasswordLabel').textContent = '新しいパスワード(変更する場合のみ、3文字以上)';
+  document.getElementById('empPassword').required = false;
+  document.getElementById('empActiveWrap').classList.remove('hidden');
+  document.getElementById('empActive').value = e.active ? '1' : '0';
+  modalError.classList.add('hidden');
+  modal.classList.remove('hidden');
+}
+
+document.getElementById('newEmployeeBtn').addEventListener('click', openNewModal);
+document.getElementById('cancelModalBtn').addEventListener('click', () => modal.classList.add('hidden'));
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  modalError.classList.add('hidden');
+  const id = document.getElementById('empId').value;
+  const employee_code = document.getElementById('empCode').value.trim();
+  const name = document.getElementById('empName').value.trim();
+  const division = document.getElementById('empDivision').value.trim();
+  const role = document.getElementById('empRole').value;
+  const password = document.getElementById('empPassword').value;
+
+  try {
+    if (id) {
+      const active = document.getElementById('empActive').value === '1';
+      const body = { name, division, role, active };
+      if (password) body.new_password = password;
+      await Api.request(`/admin/employees/${id}`, { method: 'PUT', body });
+    } else {
+      await Api.request('/admin/employees', {
+        method: 'POST',
+        body: { employee_code, name, division, role, password },
+      });
+    }
+    modal.classList.add('hidden');
+    await loadEmployees();
+  } catch (err) {
+    modalError.textContent = err.message;
+    modalError.classList.remove('hidden');
+  }
+});
+
+(async () => {
+  await loadDivisions();
+  await loadEmployees();
+})();
+</script>
+</body>
+</html>
