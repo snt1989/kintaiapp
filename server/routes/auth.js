@@ -82,6 +82,55 @@ router.post('/register', async (req, res, next) => {
   }
 });
 
+// 初回セットアップが必要かどうか(社員が1人も登録されていないか)を確認する
+router.get('/setup-status', async (req, res, next) => {
+  try {
+    const { cnt } = await db.get('SELECT COUNT(*) AS cnt FROM employees');
+    res.json({ needsSetup: Number(cnt) === 0 });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 初回セットアップ: 社員が1人も登録されていない場合のみ、管理者アカウントを作成できる
+// (ターミナル操作なしでブラウザから初期管理者を作成するための専用エンドポイント)
+router.post('/setup-admin', async (req, res, next) => {
+  try {
+    const { cnt } = await db.get('SELECT COUNT(*) AS cnt FROM employees');
+    if (Number(cnt) > 0) {
+      return res.status(403).json({ error: '初期セットアップは既に完了しています(社員が1人以上登録済みです)。' });
+    }
+
+    const { employee_code, name, password } = req.body || {};
+    if (!employee_code || !String(employee_code).trim() || !name || !String(name).trim() || !password) {
+      return res.status(400).json({ error: '社員番号・氏名・パスワードを入力してください。' });
+    }
+    if (String(password).length < 3) {
+      return res.status(400).json({ error: 'パスワードは3文字以上にしてください。' });
+    }
+
+    const hash = bcrypt.hashSync(password, 10);
+    const employee = await db.get(
+      'INSERT INTO employees (employee_code, name, password_hash, role, active) VALUES (?, ?, ?, ?, 1) RETURNING *',
+      [String(employee_code).trim(), String(name).trim(), hash, 'admin']
+    );
+
+    const token = signToken(employee);
+    res.json({
+      token,
+      employee: {
+        id: employee.id,
+        employee_code: employee.employee_code,
+        name: employee.name,
+        role: employee.role,
+        division: employee.division || null,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ログイン: 社員番号 + パスワード
 router.post('/login', async (req, res, next) => {
   try {

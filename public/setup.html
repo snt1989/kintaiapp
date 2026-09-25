@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>初期セットアップ | 三桜 勤怠管理システム</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="center-card">
+  <div class="card login-card" id="checkingCard">
+    <h1>株式会社三桜</h1>
+    <div class="subtitle">初期セットアップ</div>
+    <div style="text-align:center;color:var(--color-text-muted);margin-top:16px;">確認中...</div>
+  </div>
+
+  <div class="card login-card hidden" id="formCard">
+    <h1>株式会社三桜</h1>
+    <div class="subtitle">初期セットアップ(最初の管理者アカウントを作成します)</div>
+    <div style="text-align:center;color:var(--color-text-muted);font-size:12.5px;margin:10px 0 4px;">
+      このシステムを初めて使う場合、最初に管理者アカウントを1つ作成する必要があります。<br>
+      このセットアップは、社員が1人も登録されていない状態でのみ実行できます。
+    </div>
+
+    <form id="setupForm">
+      <label for="employeeCode">社員番号</label>
+      <input type="text" id="employeeCode" autocomplete="off" required autofocus placeholder="例: A0001">
+
+      <label for="name">氏名</label>
+      <input type="text" id="name" autocomplete="name" required>
+
+      <label for="password">パスワード(3文字以上)</label>
+      <input type="password" id="password" autocomplete="new-password" required>
+
+      <label for="passwordConfirm">パスワード(確認)</label>
+      <input type="password" id="passwordConfirm" autocomplete="new-password" required>
+
+      <button type="submit" class="btn" id="setupBtn">管理者アカウントを作成する</button>
+    </form>
+
+    <div id="errorBox" class="error-msg hidden"></div>
+  </div>
+
+  <div class="card login-card hidden" id="doneCard">
+    <h1>セットアップ完了</h1>
+    <div class="subtitle">管理者アカウントを作成しました</div>
+    <div style="text-align:center;color:var(--color-text-muted);font-size:12.5px;margin-top:10px;">
+      この社員番号とパスワードは忘れないよう控えておいてください。
+    </div>
+    <button type="button" class="btn" id="proceedBtn" style="margin-top:16px;">管理者ダッシュボードへ進む</button>
+  </div>
+
+  <div class="card login-card hidden" id="alreadyCard">
+    <h1>セットアップ済みです</h1>
+    <div class="subtitle">既に社員が登録されているため、このセットアップは実行できません</div>
+    <div style="text-align:center;color:var(--color-text-muted);font-size:12.5px;margin-top:10px;">
+      ログイン画面からいつも通りログインしてください。
+    </div>
+    <a href="/index.html" class="btn" style="display:block;text-align:center;margin-top:16px;text-decoration:none;">ログイン画面へ</a>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  const checkingCard = document.getElementById('checkingCard');
+  const formCard = document.getElementById('formCard');
+  const doneCard = document.getElementById('doneCard');
+  const alreadyCard = document.getElementById('alreadyCard');
+  const errorBox = document.getElementById('errorBox');
+  const setupBtn = document.getElementById('setupBtn');
+  const proceedBtn = document.getElementById('proceedBtn');
+
+  // 既にログイン済みならそれぞれのトップ画面へ
+  const existing = Api.getEmployee();
+  if (Api.getToken() && existing) {
+    location.href = existing.role === 'admin' ? '/admin.html' : '/clock.html';
+  }
+
+  (async () => {
+    try {
+      const data = await Api.request('/auth/setup-status');
+      checkingCard.classList.add('hidden');
+      if (data.needsSetup) {
+        formCard.classList.remove('hidden');
+      } else {
+        alreadyCard.classList.remove('hidden');
+      }
+    } catch (err) {
+      checkingCard.querySelector('div:last-child').textContent = err.message;
+    }
+  })();
+
+  const form = document.getElementById('setupForm');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBox.classList.add('hidden');
+
+    const employee_code = document.getElementById('employeeCode').value.trim();
+    const name = document.getElementById('name').value.trim();
+    const password = document.getElementById('password').value;
+    const passwordConfirm = document.getElementById('passwordConfirm').value;
+
+    if (password !== passwordConfirm) {
+      errorBox.textContent = 'パスワードが一致しません。';
+      errorBox.classList.remove('hidden');
+      return;
+    }
+
+    setupBtn.disabled = true;
+    setupBtn.textContent = '作成中...';
+
+    try {
+      const data = await Api.request('/auth/setup-admin', {
+        method: 'POST',
+        body: { employee_code, name, password },
+      });
+      Api.setSession(data.token, data.employee);
+      formCard.classList.add('hidden');
+      doneCard.classList.remove('hidden');
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.classList.remove('hidden');
+      setupBtn.disabled = false;
+      setupBtn.textContent = '管理者アカウントを作成する';
+    }
+  });
+
+  proceedBtn.addEventListener('click', () => {
+    location.href = '/admin.html';
+  });
+</script>
+</body>
+</html>

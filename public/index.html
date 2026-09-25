@@ -27,6 +27,9 @@
     <div style="text-align:center;margin-top:18px;">
       <a href="/register.html" style="font-size:13px;color:var(--color-text-muted);">初めての方はこちら(社員登録)</a>
     </div>
+    <div style="text-align:center;margin-top:8px;" id="setupLinkBox" hidden>
+      <a href="/setup.html" style="font-size:13px;color:var(--color-text-muted);">初回セットアップ(最初の管理者アカウントを作成)</a>
+    </div>
   </div>
 </div>
 
@@ -37,6 +40,18 @@
   if (Api.getToken() && existing) {
     location.href = existing.role === 'admin' ? '/admin.html' : '/clock.html';
   }
+
+  // 社員が1人も登録されていない(初回セットアップが必要な)場合のみ、セットアップ画面へのリンクを表示する
+  (async () => {
+    try {
+      const status = await Api.request('/auth/setup-status');
+      if (status.needsSetup) {
+        document.getElementById('setupLinkBox').hidden = false;
+      }
+    } catch (err) {
+      // 取得できなくてもログイン画面自体は通常通り表示する
+    }
+  })();
 
   const form = document.getElementById('loginForm');
   const errorBox = document.getElementById('errorBox');
