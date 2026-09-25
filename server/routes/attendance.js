@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth } = require('../auth');
 const { jstTodayRangeUtcIso } = require('../dateUtil');
+const sheetsSync = require('../sheetsSync');
 
 const router = express.Router();
 
@@ -93,6 +94,22 @@ router.post('/clock', requireAuth, async (req, res, next) => {
       'INSERT INTO attendance_logs (employee_id, type, timestamp, note, remarks, site_division) VALUES (?, ?, ?, ?, ?, ?) RETURNING *',
       [req.user.id, type, timestamp, siteName, remarksText, siteDivisionValue]
     );
+
+    // バックアップ用: 設定されていればリアルタイムでスプレッドシートにも同期する
+    // (失敗・タイムアウトしても打刻そのものは成功させる)
+    if (sheetsSync.isConfigured()) {
+      await sheetsSync.appendLogToSheet({
+        employee_code: req.user.employee_code,
+        employee_name: req.user.name,
+        type,
+        type_label: TYPE_LABELS[type],
+        site_division: siteDivisionValue,
+        site_name: siteName,
+        remarks: remarksText,
+        timestamp: log.timestamp,
+        timestamp_jst: new Date(log.timestamp).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }),
+      });
+    }
 
     const newStatus = deriveStatus(type);
     res.json({ ok: true, log: { ...log, label: TYPE_LABELS[log.type] }, status: newStatus });

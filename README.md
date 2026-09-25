@@ -150,6 +150,84 @@ docker compose exec attendance node server/scripts/createAdmin.js A0001 "管理�
 
 ---
 
+## 4.5 スプレッドシートへのリアルタイムバックアップ(任意)
+
+打刻のたびにGoogleスプレッドシートへ自動でバックアップできます。Google Cloudのサービスアカウントなどは不要で、Googleスプレッドシートの「Apps Script」機能だけで設定できます。
+
+### 手順
+
+1. バックアップ先にしたいGoogleスプレッドシートを新規作成(または既存のものを用意)する。
+2. スプレッドシートのメニューから「拡張機能」→「Apps Script」を開く。
+3. デフォルトで入っているコードを全て削除し、以下のコードを貼り付ける。
+
+   ```javascript
+   // Googleスプレッドシート「拡張機能 > Apps Script」に貼り付けて使用します。
+   const SECRET = 'ここに好きな合言葉を設定してください(Vercel側のSHEETS_WEBHOOK_SECRETと必ず同じ値にする)';
+   const SHEET_NAME = '勤怠ログ';
+   const HEADER = ['社員番号', '氏名', '種別', '事業部', '現場名', '備考', '日時(JST)'];
+
+   function doPost(e) {
+     const body = JSON.parse(e.postData.contents);
+     if (body.secret !== SECRET) {
+       return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'unauthorized' }))
+         .setMimeType(ContentService.MimeType.JSON);
+     }
+
+     const sheet = getSheet_();
+
+     if (body.action === 'append') {
+       appendRow_(sheet, body.log);
+     } else if (body.action === 'replace_all') {
+       sheet.clearContents();
+       sheet.appendRow(HEADER);
+       (body.logs || []).forEach((log) => appendRow_(sheet, log));
+     }
+
+     return ContentService.createTextOutput(JSON.stringify({ ok: true }))
+       .setMimeType(ContentService.MimeType.JSON);
+   }
+
+   function getSheet_() {
+     const ss = SpreadsheetApp.getActiveSpreadsheet();
+     let sheet = ss.getSheetByName(SHEET_NAME);
+     if (!sheet) sheet = ss.insertSheet(SHEET_NAME);
+     if (sheet.getLastRow() === 0) sheet.appendRow(HEADER);
+     return sheet;
+   }
+
+   function appendRow_(sheet, log) {
+     sheet.appendRow([
+       log.employee_code || '',
+       log.employee_name || '',
+       log.type_label || log.type || '',
+       log.site_division || '',
+       log.site_name || log.note || '',
+       log.remarks || '',
+       log.timestamp_jst || log.timestamp || '',
+     ]);
+   }
+   ```
+
+4. 1行目の `SECRET` を、他人に推測されにくい好きな文字列に書き換える(後でVercel側にも同じ値を設定します)。
+5. 画面上部の「保存」(フロッピーアイコン)を押す。
+6. 右上の「デプロイ」→「新しいデプロイ」を押す。
+7. 歯車アイコンから種類を選ぶ画面で「ウェブアプリ」を選択する。
+8. 「次のユーザーとして実行」は **自分**、「アクセスできるユーザー」は **全員** を選び、「デプロイ」を押す。
+9. 初回はGoogleアカウントの承認画面が出るので、自分のアカウントで許可する。
+10. 表示された「ウェブアプリ」のURL(`https://script.google.com/macros/s/.../exec` の形式)をコピーする。
+11. Vercelのプロジェクト設定(Settings → Environment Variables)に、以下の2つを追加する。
+    - `SHEETS_WEBHOOK_URL` … 手順10でコピーしたURL
+    - `SHEETS_WEBHOOK_SECRET` … 手順4で決めた合言葉(Apps Script側の `SECRET` と完全に同じ文字列)
+12. 追加後、Vercelで再デプロイ(Deployments → 最新のデプロイの「…」→ Redeploy)する。
+
+### 使い方
+
+- 設定が完了すると、社員が打刻するたびに自動でスプレッドシートに1行ずつ追記されます(管理者ダッシュボードの「スプレッドシート連携」カードで設定状況を確認できます)。
+- スプレッドシート側を手動で編集してしまった場合や、管理画面で打刻データを編集・削除した後にズレを直したい場合は、管理者ダッシュボードの「スプレッドシートに全件同期」ボタンを押すと、データベースの内容でシートを丸ごと置き換えられます。
+- 設定しない場合は何も影響がなく、通常通りアプリ内のデータベースのみで動作します。
+
+---
+
 ## 5. セキュリティ上の注意
 
 - `.env` の `JWT_SECRET` は必ずランダムな長い文字列に変更してください(デフォルト値のまま公開しないこと)。

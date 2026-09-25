@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { requireAuth, requireAdmin } = require('../auth');
 const { combineName } = require('../nameUtil');
+const sheetsSync = require('../sheetsSync');
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
@@ -528,6 +529,50 @@ router.get('/logs/csv', async (req, res, next) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="attendance_logs.csv"');
     res.send(csv);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---- スプレッドシート連携(リアルタイムバックアップ) ----
+
+router.get('/sheets/status', (req, res) => {
+  res.json({ configured: sheetsSync.isConfigured() });
+});
+
+// データベースの現在の打刻データ全件でスプレッドシートの内容を丸ごと置き換える
+// (初回バックアップ、または編集・削除でシートとズレが生じた場合の手動再同期用)
+router.post('/sheets/sync-all', async (req, res, next) => {
+  try {
+    if (!sheetsSync.isConfigured()) {
+      return res.status(400).json({ error: 'スプレッドシート連携が設定されていません。SHEETS_WEBHOOK_URLを設定してください。' });
+    }
+
+    const logs = await db.all(`
+      SELECT attendance_logs.*, employees.name AS employee_name, employees.employee_code
+      FROM attendance_logs
+      JOIN employees ON employees.id = attendance_logs.employee_id
+      ORDER BY attendance_logs.timestamp ASC
+    `);
+
+    const payload = logs.map((l) => ({
+      employee_code: l.employee_code,
+      employee_name: l.employee_name,
+      type: l.type,
+      type_label: TYPE_LABELS[l.type],
+      site_division: l.site_division || '',
+      site_name: l.note || '',
+      remarks: l.remarks || '',
+      timestamp: l.timestamp,
+      timestamp_jst: new Date(l.timestamp).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }),
+    }));
+
+    const result = await sheetsSync.replaceAllLogsInSheet(payload);
+    if (!result.ok) {
+      return res.status(502).json({ error: 'スプレッドシートへの同期に失敗しました。', detail: result.error || `HTTP ${result.status}` });
+    }
+
+    res.json({ ok: true, synced: payload.length });
   } catch (err) {
     next(err);
   }

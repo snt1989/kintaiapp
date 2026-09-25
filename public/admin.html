@@ -35,6 +35,15 @@
     </div>
 
     <div class="card">
+      <div class="section-title">スプレッドシート連携(バックアップ)</div>
+      <p class="text-muted" style="margin:0 0 10px;" id="sheetsStatusText">確認中...</p>
+      <div class="filter-row">
+        <button class="btn small secondary" id="sheetsSyncAllBtn" disabled>スプレッドシートに全件同期</button>
+      </div>
+      <div id="sheetsSyncMsg"></div>
+    </div>
+
+    <div class="card">
       <div class="section-title">日別勤務時間</div>
       <p class="text-muted" style="margin:0 0 10px;">下の勤怠ログの絞り込み条件(社員・期間)に連動して、社員ごとの日別勤務時間を集計します。</p>
       <div class="filter-row" style="margin-bottom:10px;">
@@ -443,6 +452,44 @@ document.getElementById('workSummaryCsvBtn').addEventListener('click', () => {
   URL.revokeObjectURL(url);
 });
 
+async function loadSheetsStatus() {
+  const statusText = document.getElementById('sheetsStatusText');
+  const syncBtn = document.getElementById('sheetsSyncAllBtn');
+  try {
+    const data = await Api.request('/admin/sheets/status');
+    if (data.configured) {
+      statusText.textContent = '連携が設定されています。打刻のたびにリアルタイムでスプレッドシートへ追記されます。';
+      syncBtn.disabled = false;
+    } else {
+      statusText.textContent = '未設定です。VercelでSHEETS_WEBHOOK_URL(・SHEETS_WEBHOOK_SECRET)を設定すると、打刻をリアルタイムでスプレッドシートにバックアップできます。設定方法はREADME.mdをご覧ください。';
+      syncBtn.disabled = true;
+    }
+  } catch (err) {
+    statusText.textContent = `連携状態を確認できませんでした: ${err.message}`;
+  }
+}
+
+document.getElementById('sheetsSyncAllBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('sheetsSyncAllBtn');
+  const msgBox = document.getElementById('sheetsSyncMsg');
+  if (!window.confirm('データベース上の全ての打刻データで、スプレッドシートの内容を丸ごと置き換えます。よろしいですか?')) return;
+
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = '同期中...';
+  msgBox.innerHTML = '';
+
+  try {
+    const result = await Api.request('/admin/sheets/sync-all', { method: 'POST' });
+    msgBox.innerHTML = `<div class="success-msg">${result.synced}件の打刻データをスプレッドシートに同期しました。</div>`;
+  } catch (err) {
+    msgBox.innerHTML = `<div class="error-msg">${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+});
+
 // 初期表示: 直近30日
 const today = new Date();
 const past = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -452,6 +499,7 @@ document.getElementById('filterFrom').value = past.toISOString().slice(0, 10);
 (async () => {
   await loadEmployeeOptions();
   await loadLogs();
+  await loadSheetsStatus();
 })();
 </script>
 </body>
