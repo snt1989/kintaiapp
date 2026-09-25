@@ -3,23 +3,31 @@
 // ファイルシステムが永続化されないため、クラウド型のPostgreSQLを使用する。
 const { Pool } = require('pg');
 
+// Vercel PostgresやNeon連携の設定タイミングによって環境変数名が異なるため、幅広く候補を見る
 const connectionString =
   process.env.POSTGRES_URL ||
   process.env.DATABASE_URL ||
   process.env.POSTGRES_PRISMA_URL ||
-  process.env.POSTGRES_URL_NON_POOLING;
+  process.env.POSTGRES_URL_NON_POOLING ||
+  process.env.DATABASE_URL_UNPOOLED ||
+  process.env.POSTGRES_URL_NO_SSL;
+
+const ENV_VAR_HINT = 'POSTGRES_URL / DATABASE_URL / POSTGRES_PRISMA_URL / POSTGRES_URL_NON_POOLING のいずれか';
 
 if (!connectionString) {
   // 起動時に気づけるよう警告のみ出す(実際のクエリ実行時にエラーになる)
-  console.warn(
-    '警告: POSTGRES_URL (または DATABASE_URL) が設定されていません。.env または Vercel の環境変数を確認してください。'
-  );
+  console.warn(`警告: データベース接続文字列が設定されていません(${ENV_VAR_HINT})。.env またはVercelの環境変数を確認してください。`);
 }
 
 const pool = new Pool({
   connectionString,
   // Neon / Vercel Postgres は SSL 必須。ローカルの自己署名証明書でも接続できるようにする。
   ssl: connectionString && /localhost|127\.0\.0\.1/.test(connectionString) ? false : { rejectUnauthorized: false },
+  // サーバーレス環境(関数ごとに新しいプロセス)ではコネクション数を抑え、
+  // 接続できない場合はハングさせず早めにエラーにする
+  max: 5,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 10000,
 });
 
 pool.on('error', (err) => {
@@ -33,6 +41,10 @@ function toPgPlaceholders(sql) {
 }
 
 async function query(sql, params = []) {
+  if (!connectionString) {
+    // 分かりにくい接続エラーで止まる前に、原因をはっきりさせる
+    throw new Error(`データベース接続文字列が設定されていません。Vercelの環境変数(${ENV_VAR_HINT})を確認してください。`);
+  }
   return pool.query(toPgPlaceholders(sql), params);
 }
 

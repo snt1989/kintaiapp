@@ -46,7 +46,8 @@ const Api = (() => {
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(data.error || `エラーが発生しました (${res.status})`);
+      const message = data.error || `エラーが発生しました (${res.status})`;
+      throw new Error(data.detail ? `${message}(詳細: ${data.detail})` : message);
     }
     return data;
   }
