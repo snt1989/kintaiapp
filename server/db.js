@@ -3,16 +3,33 @@
 // ファイルシステムが永続化されないため、クラウド型のPostgreSQLを使用する。
 const { Pool } = require('pg');
 
-// Vercel PostgresやNeon連携の設定タイミングによって環境変数名が異なるため、幅広く候補を見る
-const connectionString =
-  process.env.POSTGRES_URL ||
-  process.env.DATABASE_URL ||
-  process.env.POSTGRES_PRISMA_URL ||
-  process.env.POSTGRES_URL_NON_POOLING ||
-  process.env.DATABASE_URL_UNPOOLED ||
-  process.env.POSTGRES_URL_NO_SSL;
+// Vercel PostgresやNeon連携の設定タイミング・接頭辞設定(Custom Prefix)によって
+// 環境変数名が変わる(例: DATABASE_URL, sanoh_DATABASE_URL など)ため、幅広く候補を探す
+const EXACT_CANDIDATES = [
+  'POSTGRES_URL',
+  'DATABASE_URL',
+  'POSTGRES_PRISMA_URL',
+  'POSTGRES_URL_NON_POOLING',
+  'DATABASE_URL_UNPOOLED',
+  'POSTGRES_URL_NO_SSL',
+];
 
-const ENV_VAR_HINT = 'POSTGRES_URL / DATABASE_URL / POSTGRES_PRISMA_URL / POSTGRES_URL_NON_POOLING のいずれか';
+function findConnectionString() {
+  for (const key of EXACT_CANDIDATES) {
+    if (process.env[key]) return process.env[key];
+  }
+  // 接頭辞付き(Custom Prefixを設定した場合。例: sanoh_DATABASE_URL)にも対応する
+  const suffixPattern = /_(POSTGRES_URL|DATABASE_URL|POSTGRES_PRISMA_URL|POSTGRES_URL_NON_POOLING|DATABASE_URL_UNPOOLED)$/;
+  const matchedKeys = Object.keys(process.env)
+    .filter((k) => suffixPattern.test(k) && process.env[k])
+    .sort();
+  if (matchedKeys.length > 0) return process.env[matchedKeys[0]];
+  return null;
+}
+
+const connectionString = findConnectionString();
+
+const ENV_VAR_HINT = 'POSTGRES_URL / DATABASE_URL / POSTGRES_PRISMA_URL / POSTGRES_URL_NON_POOLING(接頭辞付きも可)のいずれか';
 
 if (!connectionString) {
   // 起動時に気づけるよう警告のみ出す(実際のクエリ実行時にエラーになる)
@@ -170,4 +187,16 @@ function ensureSchema() {
   return schemaReadyPromise;
 }
 
-module.exports = { pool, query, get, all, run, withTransaction, ensureSchema };
+// 診断用: 実際にどの環境変数名から接続文字列を取得したかを返す(値そのものは返さない)
+function debugConnectionSource() {
+  for (const key of EXACT_CANDIDATES) {
+    if (process.env[key]) return key;
+  }
+  const suffixPattern = /_(POSTGRES_URL|DATABASE_URL|POSTGRES_PRISMA_URL|POSTGRES_URL_NON_POOLING|DATABASE_URL_UNPOOLED)$/;
+  const matchedKeys = Object.keys(process.env)
+    .filter((k) => suffixPattern.test(k) && process.env[k])
+    .sort();
+  return matchedKeys[0] || null;
+}
+
+module.exports = { pool, query, get, all, run, withTransaction, ensureSchema, debugConnectionSource };

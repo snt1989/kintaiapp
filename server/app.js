@@ -37,11 +37,12 @@ app.use('/api/admin', adminRoutes);
 
 // 動作確認・DB接続診断用。ブラウザで /api/health を開くと状態が確認できる
 app.get('/api/health', async (req, res) => {
+  const envVarUsed = db.debugConnectionSource();
   try {
     await db.query('SELECT 1');
-    res.json({ ok: true, db: 'connected', time: new Date().toISOString() });
+    res.json({ ok: true, db: 'connected', envVarUsed, time: new Date().toISOString() });
   } catch (err) {
-    res.status(500).json({ ok: false, db: 'error', error: err.message, time: new Date().toISOString() });
+    res.status(500).json({ ok: false, db: 'error', envVarUsed, error: err.message, time: new Date().toISOString() });
   }
 });
 
