@@ -43,6 +43,20 @@
     </div>
 
     <div class="card">
+      <div class="section-title">社員番号の自動採番</div>
+      <p class="text-muted" style="margin-top:-6px;">従業員のセルフ登録や、社員管理画面での新規追加時に自動で割り当てられる社員番号を設定します。</p>
+      <p class="text-muted" style="margin-top:2px;" id="nextCodeComputedText">読み込み中...</p>
+      <form id="nextCodeForm" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-top:14px;">
+        <div style="flex:1; min-width:160px;">
+          <label for="nextCodeInput" style="margin-top:0;">次回採番番号(空欄で自動に戻す)</label>
+          <input type="text" id="nextCodeInput" inputmode="numeric" placeholder="例: 0100">
+        </div>
+        <button type="submit" class="btn small" style="margin-top:0;">保存</button>
+      </form>
+      <div id="nextCodeMsg"></div>
+    </div>
+
+    <div class="card">
       <div class="section-title">権限マスタ</div>
       <p class="text-muted" style="margin-top:-6px;">権限はシステムの動作に直結するため、この2種類に固定されています。</p>
       <div class="table-wrap">
@@ -231,6 +245,38 @@ async function deleteDivision(id) {
 }
 
 loadDivisions();
+
+// ---- 社員番号の自動採番設定 ----
+
+async function loadNextEmployeeCode() {
+  const text = document.getElementById('nextCodeComputedText');
+  try {
+    const data = await Api.request('/admin/settings/next-employee-code');
+    text.textContent = data.configured
+      ? `現在の設定: ${data.configured}(次に採番される番号: ${data.computed_next})`
+      : `現在は自動設定です(次に採番される番号: ${data.computed_next})`;
+    document.getElementById('nextCodeInput').value = data.configured || '';
+  } catch (err) {
+    text.textContent = `読み込みに失敗しました: ${err.message}`;
+  }
+}
+
+document.getElementById('nextCodeForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msgBox = document.getElementById('nextCodeMsg');
+  msgBox.innerHTML = '';
+  const value = document.getElementById('nextCodeInput').value.trim();
+
+  try {
+    await Api.request('/admin/settings/next-employee-code', { method: 'PUT', body: { value } });
+    msgBox.innerHTML = '<div class="success-msg">保存しました。</div>';
+    await loadNextEmployeeCode();
+  } catch (err) {
+    msgBox.innerHTML = `<div class="error-msg">${err.message}</div>`;
+  }
+});
+
+loadNextEmployeeCode();
 </script>
 </body>
 </html>

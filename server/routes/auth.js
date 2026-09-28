@@ -16,8 +16,10 @@ router.get('/divisions', async (req, res, next) => {
   }
 });
 
-// 次に使う社員番号を自動採番する(0001, 0002, ... の形式)
-async function generateEmployeeCode() {
+const NEXT_EMPLOYEE_CODE_SETTING_KEY = 'next_employee_code';
+
+// 既存の社員番号(数字のみ)の最大値を返す
+async function getMaxEmployeeCodeNumber() {
   const rows = await db.all('SELECT employee_code FROM employees');
   let maxNum = 0;
   for (const row of rows) {
@@ -27,7 +29,19 @@ async function generateEmployeeCode() {
       if (n > maxNum) maxNum = n;
     }
   }
-  return String(maxNum + 1).padStart(4, '0');
+  return maxNum;
+}
+
+// 次に使う社員番号を自動採番する(0001, 0002, ... の形式)
+// 管理画面で「次回採番番号」が設定されている場合はそれを優先するが、
+// 既存の社員番号と重複する(採番済みで追いついていない)場合は自動的に最大値+1にフォールバックする
+async function generateEmployeeCode() {
+  const maxNum = await getMaxEmployeeCodeNumber();
+  const configured = await db.getSetting(NEXT_EMPLOYEE_CODE_SETTING_KEY);
+  const configuredNum = configured && /^\d+$/.test(configured) ? parseInt(configured, 10) : 0;
+  const nextNum = Math.max(configuredNum, maxNum + 1);
+  const digits = Math.max(4, String(configuredNum).length);
+  return String(nextNum).padStart(digits, '0');
 }
 
 // 従業員による自己登録(社員番号は自動採番、権限は常に一般社員)
@@ -254,3 +268,6 @@ router.post('/change-password', requireAuth, async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.generateEmployeeCode = generateEmployeeCode;
+module.exports.getMaxEmployeeCodeNumber = getMaxEmployeeCodeNumber;
+module.exports.NEXT_EMPLOYEE_CODE_SETTING_KEY = NEXT_EMPLOYEE_CODE_SETTING_KEY;

@@ -149,6 +149,15 @@ function ensureSchema() {
         );
       `);
 
+      // アプリ全体の設定値(キー・バリュー形式)。従業員番号の次回採番番号など、管理画面から変更できる値を保持する。
+      await query(`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          key TEXT PRIMARY KEY,
+          value TEXT,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+      `);
+
       // 将来的なスキーマ変更にも耐えられるよう、念のため列の存在確認も行う
       await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS division TEXT;`);
       await query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS remarks TEXT;`);
@@ -206,6 +215,20 @@ function ensureSchema() {
   return schemaReadyPromise;
 }
 
+// アプリ設定値(キー・バリュー)の取得・保存用ヘルパー
+async function getSetting(key) {
+  const row = await get('SELECT value FROM app_settings WHERE key = ?', [key]);
+  return row ? row.value : null;
+}
+
+async function setSetting(key, value) {
+  await query(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    [key, value]
+  );
+}
+
 // 診断用: 実際にどの環境変数名から接続文字列を取得したかを返す(値そのものは返さない)
 function debugConnectionSource() {
   for (const key of EXACT_CANDIDATES) {
@@ -218,4 +241,4 @@ function debugConnectionSource() {
   return matchedKeys[0] || null;
 }
 
-module.exports = { pool, query, get, all, run, withTransaction, ensureSchema, debugConnectionSource };
+module.exports = { pool, query, get, all, run, withTransaction, ensureSchema, debugConnectionSource, getSetting, setSetting };

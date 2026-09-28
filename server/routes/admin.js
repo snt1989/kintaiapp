@@ -4,6 +4,11 @@ const db = require('../db');
 const { requireAuth, requireAdmin } = require('../auth');
 const { combineName } = require('../nameUtil');
 const sheetsSync = require('../sheetsSync');
+const {
+  generateEmployeeCode,
+  getMaxEmployeeCodeNumber,
+  NEXT_EMPLOYEE_CODE_SETTING_KEY,
+} = require('./auth');
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
@@ -162,6 +167,51 @@ router.delete('/divisions/:id', async (req, res, next) => {
 
     await db.run('DELETE FROM divisions WHERE id = ?', [id]);
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---- 社員番号の自動採番設定 ----
+
+// 現在の設定値(未設定ならnull)と、実際に次回割り当てられる番号(計算結果)を返す
+router.get('/settings/next-employee-code', async (req, res, next) => {
+  try {
+    const configured = await db.getSetting(NEXT_EMPLOYEE_CODE_SETTING_KEY);
+    const computedNext = await generateEmployeeCode();
+    res.json({ configured, computed_next: computedNext });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 次回自動採番される社員番号を管理画面から設定する(従業員のセルフ登録・管理画面からの新規追加の両方に適用)
+router.put('/settings/next-employee-code', async (req, res, next) => {
+  try {
+    const { value } = req.body || {};
+    const trimmed = value === null || value === undefined ? '' : String(value).trim();
+
+    if (!trimmed) {
+      // 空欄の場合は設定を解除し、既存の最大値+1にリセットする
+      await db.setSetting(NEXT_EMPLOYEE_CODE_SETTING_KEY, null);
+      const computedNext = await generateEmployeeCode();
+      return res.json({ configured: null, computed_next: computedNext });
+    }
+
+    if (!/^\d+$/.test(trimmed) || trimmed.length > 10) {
+      return res.status(400).json({ error: '半角数字で10桁以内で入力してください(例: 0100)。' });
+    }
+
+    const maxNum = await getMaxEmployeeCodeNumber();
+    if (parseInt(trimmed, 10) <= maxNum) {
+      return res.status(400).json({
+        error: `既に社員番号${String(maxNum).padStart(4, '0')}まで使用されているため、それより大きい番号を指定してください。`,
+      });
+    }
+
+    await db.setSetting(NEXT_EMPLOYEE_CODE_SETTING_KEY, trimmed);
+    const computedNext = await generateEmployeeCode();
+    res.json({ configured: trimmed, computed_next: computedNext });
   } catch (err) {
     next(err);
   }
