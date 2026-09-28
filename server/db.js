@@ -120,12 +120,16 @@ function ensureSchema() {
           employee_code TEXT NOT NULL UNIQUE,
           name TEXT NOT NULL,
           password_hash TEXT NOT NULL,
-          role TEXT NOT NULL DEFAULT 'employee' CHECK (role IN ('employee','admin')),
+          role TEXT NOT NULL DEFAULT 'employee' CHECK (role IN ('employee','admin','contractor','partner')),
           active INTEGER NOT NULL DEFAULT 1,
           division TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
       `);
+
+      // 権限マスタに「委託職員」「協力会社」を追加(既存テーブルのCHECK制約を更新する)
+      await query(`ALTER TABLE employees DROP CONSTRAINT IF EXISTS employees_role_check;`);
+      await query(`ALTER TABLE employees ADD CONSTRAINT employees_role_check CHECK (role IN ('employee','admin','contractor','partner'));`);
 
       await query(`
         CREATE TABLE IF NOT EXISTS attendance_logs (

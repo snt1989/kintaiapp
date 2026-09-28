@@ -23,10 +23,15 @@ const TYPE_LABELS = {
 // ---- マスタ管理 ----
 
 // 権限マスタ(固定): システムの動作に直結するため、追加・削除はできません
+// (管理者のみが管理機能を利用可能。一般社員・委託職員・協力会社はいずれも打刻・自分の履歴閲覧のみ)
 const ROLE_MASTER = [
   { value: 'employee', label: '一般社員' },
+  { value: 'contractor', label: '委託職員' },
+  { value: 'partner', label: '協力会社' },
   { value: 'admin', label: '管理者' },
 ];
+const ROLE_VALUES = ROLE_MASTER.map((r) => r.value);
+const ROLE_LABELS = Object.fromEntries(ROLE_MASTER.map((r) => [r.value, r.label]));
 
 // 状態マスタ(固定): ログイン可否に直結するため、追加・削除はできません
 const STATUS_MASTER = [
@@ -239,7 +244,7 @@ router.post('/employees', async (req, res, next) => {
     if (String(password).length < 3) {
       return res.status(400).json({ error: 'パスワードは3文字以上にしてください。' });
     }
-    const roleValue = role === 'admin' ? 'admin' : 'employee';
+    const roleValue = ROLE_VALUES.includes(role) ? role : 'employee';
     const divisionValue = division ? String(division).trim() : null;
 
     if (divisionValue && !(await db.get('SELECT id FROM divisions WHERE name = ?', [divisionValue]))) {
@@ -397,7 +402,7 @@ router.put('/employees/:id', async (req, res, next) => {
       nextFirstName = String(first_name).trim();
     }
     const nextName = combineName(nextLastName, nextFirstName) || employee.name;
-    const nextRole = role === 'admin' || role === 'employee' ? role : employee.role;
+    const nextRole = ROLE_VALUES.includes(role) ? role : employee.role;
     const nextActive = active !== undefined ? (active ? 1 : 0) : employee.active;
     const nextDivision = division !== undefined ? (String(division).trim() || null) : employee.division;
 

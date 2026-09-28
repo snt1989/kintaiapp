@@ -45,6 +45,8 @@
           <select id="filterRole">
             <option value="">すべて</option>
             <option value="employee">一般社員</option>
+            <option value="contractor">委託職員</option>
+            <option value="partner">協力会社</option>
             <option value="admin">管理者</option>
           </select>
         </div>
@@ -126,6 +128,8 @@
       <label for="empRole">権限</label>
       <select id="empRole">
         <option value="employee">一般社員</option>
+        <option value="contractor">委託職員</option>
+        <option value="partner">協力会社</option>
         <option value="admin">管理者</option>
       </select>
 
@@ -166,6 +170,8 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
 
 let employeesCache = [];
 let divisionsCache = [];
+
+const ROLE_LABELS = { employee: '一般社員', contractor: '委託職員', partner: '協力会社', admin: '管理者' };
 
 async function loadDivisions() {
   try {
@@ -258,7 +264,7 @@ function renderTable() {
         <td>${e.employee_code}</td>
         <td>${e.name}</td>
         <td>${e.division ? e.division : '<span class="text-muted">未設定</span>'}</td>
-        <td><span class="role-tag ${e.role}">${e.role === 'admin' ? '管理者' : '一般社員'}</span></td>
+        <td><span class="role-tag ${e.role}">${ROLE_LABELS[e.role] || e.role}</span></td>
         <td>${e.active ? '<span class="text-muted">有効</span>' : '<span class="inactive-tag">無効</span>'}</td>
         <td>${created}</td>
         <td><button class="link-btn" data-edit="${e.id}">編集</button></td>
