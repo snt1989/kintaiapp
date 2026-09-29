@@ -177,6 +177,72 @@ router.delete('/divisions/:id', async (req, res, next) => {
   }
 });
 
+// ---- データベース使用容量 ----
+
+const DB_STORAGE_LIMIT_SETTING_KEY = 'db_storage_limit_mb';
+
+// PostgreSQL(Vercel Postgres/Neon)は自前サーバーのディスクを持たないため、
+// 「サーバーの容量」としてデータベースの使用容量を表示する
+router.get('/storage', async (req, res, next) => {
+  try {
+    const dbSize = await db.get(
+      `SELECT pg_database_size(current_database()) AS bytes,
+              pg_size_pretty(pg_database_size(current_database())) AS pretty`
+    );
+
+    const tables = await db.all(`
+      SELECT
+        relname AS name,
+        pg_total_relation_size(relid) AS bytes,
+        pg_size_pretty(pg_total_relation_size(relid)) AS pretty,
+        n_live_tup AS row_estimate
+      FROM pg_stat_user_tables
+      ORDER BY pg_total_relation_size(relid) DESC
+    `);
+
+    const limitConfigured = await db.getSetting(DB_STORAGE_LIMIT_SETTING_KEY);
+    const limitMb = limitConfigured && /^\d+(\.\d+)?$/.test(limitConfigured) ? parseFloat(limitConfigured) : null;
+    const usedMb = Number(dbSize.bytes) / (1024 * 1024);
+    const percent = limitMb ? Math.min(999, Math.round((usedMb / limitMb) * 1000) / 10) : null;
+
+    res.json({
+      database: { bytes: Number(dbSize.bytes), pretty: dbSize.pretty },
+      tables: tables.map((t) => ({
+        name: t.name,
+        bytes: Number(t.bytes),
+        pretty: t.pretty,
+        row_estimate: Number(t.row_estimate),
+      })),
+      limit_mb: limitMb,
+      used_percent: percent,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 容量の上限(MB)を管理画面から設定する(使用率の目安表示用。DB側の実際の上限を変更するものではない)
+router.put('/settings/db-storage-limit', async (req, res, next) => {
+  try {
+    const { value } = req.body || {};
+    const trimmed = value === null || value === undefined ? '' : String(value).trim();
+
+    if (!trimmed) {
+      await db.setSetting(DB_STORAGE_LIMIT_SETTING_KEY, null);
+      return res.json({ limit_mb: null });
+    }
+
+    if (!/^\d+(\.\d+)?$/.test(trimmed) || Number(trimmed) <= 0) {
+      return res.status(400).json({ error: '半角数字(MB単位)で入力してください(例: 500)。' });
+    }
+
+    await db.setSetting(DB_STORAGE_LIMIT_SETTING_KEY, trimmed);
+    res.json({ limit_mb: parseFloat(trimmed) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---- 社員番号の自動採番設定 ----
 
 // 現在の設定値(未設定ならnull)と、実際に次回割り当てられる番号(計算結果)を返す

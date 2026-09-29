@@ -35,6 +35,31 @@
     </div>
 
     <div class="card">
+      <div class="section-title">サーバー使用容量(データベース)</div>
+      <p class="text-muted" style="margin:0 0 10px;">本アプリはVercel上のサーバーレス構成のため、専用ディスクの代わりにデータベース(PostgreSQL)の使用容量を表示します。</p>
+      <p style="margin:0 0 6px;" id="storageUsedText">読み込み中...</p>
+      <div id="storageBarWrap" class="hidden" style="background:#f1f5f9;border-radius:8px;height:10px;overflow:hidden;margin-bottom:12px;">
+        <div id="storageBarFill" style="height:100%;background:var(--color-primary);width:0%;"></div>
+      </div>
+      <div class="table-wrap" style="margin-bottom:14px;">
+        <table>
+          <thead><tr><th>テーブル</th><th>使用容量</th><th>行数(目安)</th></tr></thead>
+          <tbody id="storageTableBody">
+            <tr><td colspan="3" class="text-muted">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <form id="storageLimitForm" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+        <div style="flex:1; min-width:160px;">
+          <label for="storageLimitInput" style="margin-top:0;">使用率表示の上限(MB・任意。空欄で非表示)</label>
+          <input type="text" id="storageLimitInput" inputmode="decimal" placeholder="例: 500">
+        </div>
+        <button type="submit" class="btn small" style="margin-top:0;">保存</button>
+      </form>
+      <div id="storageMsg"></div>
+    </div>
+
+    <div class="card">
       <div class="section-title">スプレッドシート連携(バックアップ)</div>
       <p class="text-muted" style="margin:0 0 10px;" id="sheetsStatusText">確認中...</p>
       <div class="filter-row">
@@ -452,6 +477,53 @@ document.getElementById('workSummaryCsvBtn').addEventListener('click', () => {
   URL.revokeObjectURL(url);
 });
 
+async function loadStorageInfo() {
+  const usedText = document.getElementById('storageUsedText');
+  const barWrap = document.getElementById('storageBarWrap');
+  const barFill = document.getElementById('storageBarFill');
+  const tbody = document.getElementById('storageTableBody');
+
+  try {
+    const data = await Api.request('/admin/storage');
+
+    if (data.limit_mb) {
+      usedText.textContent = `使用中: ${data.database.pretty} / ${data.limit_mb}MB(${data.used_percent}%)`;
+      barWrap.classList.remove('hidden');
+      barFill.style.width = `${Math.min(100, data.used_percent)}%`;
+      barFill.style.background = data.used_percent >= 90 ? 'var(--color-danger)' : data.used_percent >= 70 ? '#d97706' : 'var(--color-primary)';
+    } else {
+      usedText.textContent = `使用中: ${data.database.pretty}`;
+      barWrap.classList.add('hidden');
+    }
+
+    document.getElementById('storageLimitInput').value = data.limit_mb || '';
+
+    if (!data.tables.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="text-muted">テーブルがありません。</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.tables.map((t) => `<tr><td>${t.name}</td><td>${t.pretty}</td><td>${t.row_estimate.toLocaleString('ja-JP')}</td></tr>`).join('');
+  } catch (err) {
+    usedText.textContent = `取得できませんでした: ${err.message}`;
+    tbody.innerHTML = `<tr><td colspan="3" class="error-msg">${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById('storageLimitForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msgBox = document.getElementById('storageMsg');
+  msgBox.innerHTML = '';
+  const value = document.getElementById('storageLimitInput').value.trim();
+
+  try {
+    await Api.request('/admin/settings/db-storage-limit', { method: 'PUT', body: { value } });
+    msgBox.innerHTML = '<div class="success-msg">保存しました。</div>';
+    await loadStorageInfo();
+  } catch (err) {
+    msgBox.innerHTML = `<div class="error-msg">${err.message}</div>`;
+  }
+});
+
 async function loadSheetsStatus() {
   const statusText = document.getElementById('sheetsStatusText');
   const syncBtn = document.getElementById('sheetsSyncAllBtn');
@@ -500,6 +572,7 @@ document.getElementById('filterFrom').value = past.toISOString().slice(0, 10);
   await loadEmployeeOptions();
   await loadLogs();
   await loadSheetsStatus();
+  await loadStorageInfo();
 })();
 </script>
 </body>
