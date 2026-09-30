@@ -56,8 +56,6 @@
         <label for="remarks">備考(任意)</label>
         <input type="text" id="remarks" autocomplete="off">
 
-        <div class="manual-summary" id="summary" hidden></div>
-
         <button type="submit" class="btn" id="submitBtn">この内容で登録する</button>
         <div id="resultMsg"></div>
       </form>
@@ -83,37 +81,6 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
 const $ = (id) => document.getElementById(id);
 
 
-// 本日の勤務時間(「打刻入力」画面と同じ計算: 出勤〜退勤の合計から休憩を差し引く)
-let todayLogsCache = [];
-function computeWorkedMinutes(logs, now) {
-  let workedMs = 0, breakMs = 0, workStart = null, breakStart = null;
-  logs.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)).forEach((l) => {
-    const t = new Date(l.timestamp);
-    if (l.type === 'clock_in') workStart = t;
-    else if (l.type === 'clock_out') { if (workStart) { workedMs += t - workStart; workStart = null; } }
-    else if (l.type === 'break_start') breakStart = t;
-    else if (l.type === 'break_end') { if (breakStart) { breakMs += t - breakStart; breakStart = null; } }
-  });
-  if (workStart) workedMs += now - workStart;
-  if (breakStart) breakMs += now - breakStart;
-  return Math.max(0, Math.round((workedMs - breakMs) / 60000));
-}
-function updateWorkTime() {
-  const minutes = todayLogsCache.length ? computeWorkedMinutes(todayLogsCache, new Date()) : 0;
-  $('workTime').textContent = `本日の勤務時間: ${Math.floor(minutes / 60)}時間${minutes % 60}分`;
-}
-async function loadToday() {
-  try {
-    const data = await Api.request('/attendance/today-status');
-    todayLogsCache = data.logs;
-    updateWorkTime();
-  } catch (err) {
-    console.error(err);
-  }
-}
-loadToday();
-setInterval(updateWorkTime, 15000);
-
 // 日付の初期値は今日(JST)。未来日は選べない。
 function jstToday() {
   return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
@@ -138,7 +105,7 @@ $('siteName').value = localStorage.getItem(SITE_NAME_KEY) || '';
   }
 })();
 
-// 入力内容から勤務時間の目安を表示する
+// 本日の勤務時間: 入力した出勤・退勤・休憩の時刻から計算する(休憩は開始・終了が揃っている場合のみ差し引く)
 function toMin(t) {
   if (!/^\d{2}:\d{2}$/.test(t)) return null;
   return parseInt(t.slice(0, 2), 10) * 60 + parseInt(t.slice(3), 10);
@@ -148,16 +115,15 @@ function updateSummary() {
   const outM = toMin($('clockOut').value);
   const bs = toMin($('breakStart').value);
   const be = toMin($('breakEnd').value);
-  const box = $('summary');
-  if (inM === null || outM === null || outM <= inM) { box.hidden = true; return; }
-  let worked = outM - inM;
-  let breakText = '休憩なし';
-  if (bs !== null && be !== null && be > bs) {
-    worked -= be - bs;
-    breakText = `休憩 ${be - bs}分`;
+  const el = $('workTime');
+  if (inM === null || outM === null || outM <= inM) {
+    el.textContent = '本日の勤務時間: --時間--分';
+    return;
   }
-  box.textContent = `勤務時間の目安: ${Math.floor(worked / 60)}時間${String(worked % 60).padStart(2, '0')}分(${breakText})`;
-  box.hidden = false;
+  let worked = outM - inM;
+  if (bs !== null && be !== null && be > bs) worked -= be - bs;
+  worked = Math.max(0, worked);
+  el.textContent = `本日の勤務時間: ${Math.floor(worked / 60)}時間${worked % 60}分`;
 }
 ['clockIn', 'clockOut', 'breakStart', 'breakEnd'].forEach((id) => $(id).addEventListener('input', updateSummary));
 
@@ -186,7 +152,6 @@ $('manualForm').addEventListener('submit', async (e) => {
     showResult(`${body.date} の勤務時間を登録しました。`, true);
     ['clockIn', 'clockOut', 'breakStart', 'breakEnd', 'remarks'].forEach((id) => { $(id).value = ''; });
     updateSummary();
-    loadToday();
   } catch (err) {
     showResult(err.message, false);
   } finally {
