@@ -54,7 +54,7 @@
         <input type="text" id="siteName" placeholder="例: 〇〇工場 A棟" autocomplete="off">
 
         <label for="remarks">備考(任意)</label>
-        <input type="text" id="remarks" placeholder="例: 打刻を忘れたため後から入力" autocomplete="off">
+        <input type="text" id="remarks" autocomplete="off">
 
         <div class="manual-summary" id="summary" hidden></div>
 
@@ -67,7 +67,6 @@
   <nav class="tabbar">
     <a href="/clock.html"><span class="tab-icon">⏱️</span>今の打刻</a>
     <a href="/manual.html" class="active"><span class="tab-icon">✍️</span>時間入力</a>
-    <a href="/history.html"><span class="tab-icon">📋</span>履歴</a>
   </nav>
 </div>
 
@@ -152,7 +151,7 @@ $('manualForm').addEventListener('submit', async (e) => {
     await Api.request('/attendance/manual', { method: 'POST', body });
     localStorage.setItem(SITE_DIVISION_KEY, body.site_division);
     localStorage.setItem(SITE_NAME_KEY, body.note);
-    showResult(`${body.date} の勤務時間を登録しました。「履歴」で確認できます。`, true);
+    showResult(`${body.date} の勤務時間を登録しました。`, true);
     ['clockIn', 'clockOut', 'breakStart', 'breakEnd', 'remarks'].forEach((id) => { $(id).value = ''; });
     updateSummary();
   } catch (err) {
