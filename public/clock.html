@@ -28,7 +28,7 @@
       </div>
 
       <div class="clock-display">
-        <div class="time" id="nowTime">--:--:--</div>
+        <div class="time" id="nowTime">--:--</div>
         <div class="date" id="nowDate">----年--月--日(-)</div>
         <div class="work-time" id="workTime">本日の勤務時間: --時間--分</div>
       </div>
@@ -67,19 +67,7 @@
 
       <div id="resultMsg"></div>
     </div>
-
-    <div class="card">
-      <div class="section-title">本日の打刻記録</div>
-      <div class="today-log-list" id="todayLogList">
-        <div class="text-muted">読み込み中...</div>
-      </div>
-    </div>
   </main>
-
-  <nav class="tabbar">
-    <a href="/clock.html" class="active"><span class="tab-icon">⏱️</span>打刻</a>
-    <a href="/history.html"><span class="tab-icon">📋</span>履歴</a>
-  </nav>
 </div>
 
 <script src="/js/api.js"></script>
@@ -186,13 +174,12 @@ function updateWorkTime() {
   el.textContent = `本日の勤務時間: ${formatWorkedMinutes(minutes)}`;
 }
 
-// 時計表示
+// 時計表示(秒は表示しない)
 function updateClock() {
   const now = new Date();
   const hh = String(now.getHours()).padStart(2, '0');
   const mm = String(now.getMinutes()).padStart(2, '0');
-  const ss = String(now.getSeconds()).padStart(2, '0');
-  document.getElementById('nowTime').textContent = `${hh}:${mm}:${ss}`;
+  document.getElementById('nowTime').textContent = `${hh}:${mm}`;
 
   const weekday = ['日', '月', '火', '水', '木', '金', '土'][now.getDay()];
   document.getElementById('nowDate').textContent =
@@ -201,7 +188,7 @@ function updateClock() {
   updateWorkTime();
 }
 updateClock();
-setInterval(updateClock, 1000);
+setInterval(updateClock, 15000);
 
 const resultMsg = document.getElementById('resultMsg');
 
@@ -234,30 +221,16 @@ function applyStatus(status) {
   });
 }
 
+// 打刻ボタンの有効/無効判定と本日の勤務時間計算のために、本日の打刻状況のみを取得する
+// (打刻の一覧表示はこの画面からは削除。確認したい場合は「履歴」ページを参照)
 async function loadTodayStatus() {
-  const listEl = document.getElementById('todayLogList');
   try {
     const data = await Api.request('/attendance/today-status');
     applyStatus(data.status);
     todayLogsCache = data.logs;
     updateWorkTime();
-
-    if (!data.logs.length) {
-      listEl.innerHTML = '<div class="text-muted">本日の打刻はまだありません。</div>';
-      return;
-    }
-    listEl.innerHTML = data.logs
-      .map((l) => {
-        const t = new Date(l.timestamp);
-        const time = t.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' });
-        const divisionTag = l.site_division ? `<span class="site-tag">${l.site_division}</span>` : '';
-        const site = l.note ? `<span class="site-tag">${l.note}</span>` : '';
-        const remarksLine = l.remarks ? `<div class="remarks-tag">備考: ${l.remarks}</div>` : '';
-        return `<div class="log-entry"><div class="log-row"><span class="log-row-left"><span class="badge ${l.type}">${l.label}</span>${divisionTag}${site}</span><span class="tabular-time">${time}</span></div>${remarksLine}</div>`;
-      })
-      .join('');
   } catch (err) {
-    listEl.innerHTML = `<div class="error-msg">${err.message}</div>`;
+    showResult(err.message, false);
   }
 }
 loadTodayStatus();
