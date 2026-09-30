@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>時間入力 | 三桜 勤怠管理システム</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;800&family=Zen+Kaku+Gothic+New:wght@700;800&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1>勤怠打刻(時間入力)</h1>
+    <div class="user-info">
+      <span id="userName"></span>
+      <button class="logout-btn" id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2 style="margin-top:0;font-size:16px;">時間を直接入力して登録</h2>
+      <p class="text-muted" style="font-size:13px;margin-top:4px;">打刻し忘れた日の勤務時間を、1日分まとめて登録できます。</p>
+
+      <form id="manualForm" novalidate>
+        <label for="date">日付(必須)</label>
+        <input type="date" id="date" required>
+
+        <div class="time-grid">
+          <div>
+            <label for="clockIn">出勤(必須)</label>
+            <input type="time" id="clockIn" required>
+          </div>
+          <div>
+            <label for="clockOut">退勤(必須)</label>
+            <input type="time" id="clockOut" required>
+          </div>
+          <div>
+            <label for="breakStart">休憩開始(任意)</label>
+            <input type="time" id="breakStart">
+          </div>
+          <div>
+            <label for="breakEnd">休憩終了(任意)</label>
+            <input type="time" id="breakEnd">
+          </div>
+        </div>
+
+        <label for="siteDivision">現場の該当事業部(必須)</label>
+        <select id="siteDivision" required>
+          <option value="">選択してください</option>
+        </select>
+
+        <label for="siteName">現場名(任意)</label>
+        <input type="text" id="siteName" placeholder="例: 〇〇工場 A棟" autocomplete="off">
+
+        <label for="remarks">備考(任意)</label>
+        <input type="text" id="remarks" placeholder="例: 打刻を忘れたため後から入力" autocomplete="off">
+
+        <div class="manual-summary" id="summary" hidden></div>
+
+        <button type="submit" class="btn" id="submitBtn">この内容で登録する</button>
+        <div id="resultMsg"></div>
+      </form>
+    </div>
+  </main>
+
+  <nav class="tabbar">
+    <a href="/clock.html"><span class="tab-icon">⏱️</span>今の打刻</a>
+    <a href="/manual.html" class="active"><span class="tab-icon">✍️</span>時間入力</a>
+    <a href="/history.html"><span class="tab-icon">📋</span>履歴</a>
+  </nav>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+Api.requireLogin();
+const employee = Api.getEmployee();
+document.getElementById('userName').textContent = `${employee.name} (${employee.employee_code})`;
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  Api.clearSession();
+  location.href = '/index.html';
+});
+
+const $ = (id) => document.getElementById(id);
+
+// 日付の初期値は今日(JST)。未来日は選べない。
+function jstToday() {
+  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+$('date').value = jstToday();
+$('date').max = jstToday();
+
+// 事業部・現場名は「今の打刻」画面と同じ保存値を初期表示に使う
+const SITE_NAME_KEY = 'sanoh_attendance_site_name';
+const SITE_DIVISION_KEY = 'sanoh_attendance_site_division';
+$('siteName').value = localStorage.getItem(SITE_NAME_KEY) || '';
+
+(async () => {
+  try {
+    const data = await Api.request('/auth/divisions');
+    const preferred = localStorage.getItem(SITE_DIVISION_KEY) || employee.division || '';
+    $('siteDivision').innerHTML = '<option value="">選択してください</option>' +
+      data.divisions.map((d) => `<option value="${d.name}">${d.name}</option>`).join('');
+    if (preferred && data.divisions.some((d) => d.name === preferred)) $('siteDivision').value = preferred;
+  } catch (err) {
+    console.error(err);
+  }
+})();
+
+// 入力内容から勤務時間の目安を表示する
+function toMin(t) {
+  if (!/^\d{2}:\d{2}$/.test(t)) return null;
+  return parseInt(t.slice(0, 2), 10) * 60 + parseInt(t.slice(3), 10);
+}
+function updateSummary() {
+  const inM = toMin($('clockIn').value);
+  const outM = toMin($('clockOut').value);
+  const bs = toMin($('breakStart').value);
+  const be = toMin($('breakEnd').value);
+  const box = $('summary');
+  if (inM === null || outM === null || outM <= inM) { box.hidden = true; return; }
+  let worked = outM - inM;
+  let breakText = '休憩なし';
+  if (bs !== null && be !== null && be > bs) {
+    worked -= be - bs;
+    breakText = `休憩 ${be - bs}分`;
+  }
+  box.textContent = `勤務時間の目安: ${Math.floor(worked / 60)}時間${String(worked % 60).padStart(2, '0')}分(${breakText})`;
+  box.hidden = false;
+}
+['clockIn', 'clockOut', 'breakStart', 'breakEnd'].forEach((id) => $(id).addEventListener('input', updateSummary));
+
+function showResult(text, ok) {
+  $('resultMsg').innerHTML = `<div class="${ok ? 'success-msg' : 'error-msg'}">${text}</div>`;
+}
+
+$('manualForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('resultMsg').innerHTML = '';
+  const body = {
+    date: $('date').value,
+    clock_in: $('clockIn').value,
+    clock_out: $('clockOut').value,
+    break_start: $('breakStart').value,
+    break_end: $('breakEnd').value,
+    site_division: $('siteDivision').value,
+    note: $('siteName').value.trim(),
+    remarks: $('remarks').value.trim(),
+  };
+  $('submitBtn').disabled = true;
+  try {
+    await Api.request('/attendance/manual', { method: 'POST', body });
+    localStorage.setItem(SITE_DIVISION_KEY, body.site_division);
+    localStorage.setItem(SITE_NAME_KEY, body.note);
+    showResult(`${body.date} の勤務時間を登録しました。「履歴」で確認できます。`, true);
+    ['clockIn', 'clockOut', 'breakStart', 'breakEnd', 'remarks'].forEach((id) => { $(id).value = ''; });
+    updateSummary();
+  } catch (err) {
+    showResult(err.message, false);
+  } finally {
+    $('submitBtn').disabled = false;
+  }
+});
+</script>
+</body>
+</html>

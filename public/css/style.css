@@ -619,3 +619,20 @@ th { color: var(--color-text-muted); font-weight: 600; background: #fafafa; }
   .hero-card { padding: 20px 16px 18px; }
   main { padding: 16px 12px 90px; }
 }
+
+/* ---- 時間入力画面 ---- */
+.time-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+.time-grid > div { min-width: 0; }
+.manual-summary {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #eff4ff;
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
