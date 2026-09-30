@@ -439,6 +439,7 @@ button {
 .badge.break_end { background: #2563eb; }
 
 nav.tabbar {
+  z-index: 50;
   position: fixed;
   bottom: 0;
   left: 0;
@@ -635,4 +636,14 @@ th { color: var(--color-text-muted); font-weight: 600; background: #fafafa; }
   color: var(--color-primary);
   font-size: 13px;
   font-weight: 700;
+}
+.manual-today {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #eff4ff;
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }

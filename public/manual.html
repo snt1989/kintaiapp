@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>時間入力 | 三桜 勤怠管理システム</title>
+<title>直接入力 | 三桜 勤怠管理システム</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;800&family=Zen+Kaku+Gothic+New:wght@700;800&display=swap">
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
 <div class="app">
   <header class="topbar">
-    <h1>勤怠打刻(時間入力)</h1>
+    <h1>直接入力</h1>
     <div class="user-info">
       <span id="userName"></span>
       <button class="logout-btn" id="logoutBtn">ログアウト</button>
@@ -19,7 +19,8 @@
 
   <main>
     <div class="card">
-      <h2 style="margin-top:0;font-size:16px;">時間を直接入力して登録</h2>
+      <div class="manual-today" id="workTime">本日の勤務時間: --時間--分</div>
+      <h2 style="margin-top:16px;font-size:16px;">時間を直接入力して登録</h2>
 
       <form id="manualForm" novalidate>
         <label for="date">日付(必須)</label>
@@ -64,8 +65,8 @@
   </main>
 
   <nav class="tabbar">
-    <a href="/clock.html"><span class="tab-icon">⏱️</span>今の打刻</a>
-    <a href="/manual.html" class="active"><span class="tab-icon">✍️</span>時間入力</a>
+    <a href="/clock.html"><span class="tab-icon">⏱️</span>打刻入力</a>
+    <a href="/manual.html" class="active"><span class="tab-icon">✍️</span>直接入力</a>
   </nav>
 </div>
 
@@ -81,6 +82,38 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
 
 const $ = (id) => document.getElementById(id);
 
+
+// 本日の勤務時間(「打刻入力」画面と同じ計算: 出勤〜退勤の合計から休憩を差し引く)
+let todayLogsCache = [];
+function computeWorkedMinutes(logs, now) {
+  let workedMs = 0, breakMs = 0, workStart = null, breakStart = null;
+  logs.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)).forEach((l) => {
+    const t = new Date(l.timestamp);
+    if (l.type === 'clock_in') workStart = t;
+    else if (l.type === 'clock_out') { if (workStart) { workedMs += t - workStart; workStart = null; } }
+    else if (l.type === 'break_start') breakStart = t;
+    else if (l.type === 'break_end') { if (breakStart) { breakMs += t - breakStart; breakStart = null; } }
+  });
+  if (workStart) workedMs += now - workStart;
+  if (breakStart) breakMs += now - breakStart;
+  return Math.max(0, Math.round((workedMs - breakMs) / 60000));
+}
+function updateWorkTime() {
+  const minutes = todayLogsCache.length ? computeWorkedMinutes(todayLogsCache, new Date()) : 0;
+  $('workTime').textContent = `本日の勤務時間: ${Math.floor(minutes / 60)}時間${minutes % 60}分`;
+}
+async function loadToday() {
+  try {
+    const data = await Api.request('/attendance/today-status');
+    todayLogsCache = data.logs;
+    updateWorkTime();
+  } catch (err) {
+    console.error(err);
+  }
+}
+loadToday();
+setInterval(updateWorkTime, 15000);
+
 // 日付の初期値は今日(JST)。未来日は選べない。
 function jstToday() {
   return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
@@ -88,7 +121,7 @@ function jstToday() {
 $('date').value = jstToday();
 $('date').max = jstToday();
 
-// 事業部・現場名は「今の打刻」画面と同じ保存値を初期表示に使う
+// 事業部・現場名は「打刻入力」画面と同じ保存値を初期表示に使う
 const SITE_NAME_KEY = 'sanoh_attendance_site_name';
 const SITE_DIVISION_KEY = 'sanoh_attendance_site_division';
 $('siteName').value = localStorage.getItem(SITE_NAME_KEY) || '';
@@ -153,6 +186,7 @@ $('manualForm').addEventListener('submit', async (e) => {
     showResult(`${body.date} の勤務時間を登録しました。`, true);
     ['clockIn', 'clockOut', 'breakStart', 'breakEnd', 'remarks'].forEach((id) => { $(id).value = ''; });
     updateSummary();
+    loadToday();
   } catch (err) {
     showResult(err.message, false);
   } finally {
