@@ -51,11 +51,11 @@
           <thead>
             <tr>
               <th>社員番号</th><th>氏名</th><th>時給(円)</th><th>出勤日数</th>
-              <th>勤務時間</th><th>時間外</th><th>深夜</th><th>休日</th><th>支給額(円)</th><th>明細書</th>
+              <th>勤務時間</th><th>時間外</th><th>深夜</th><th>休日</th><th>支給額(円)</th><th>控除合計(円)</th><th>差引支給額(円)</th><th>明細書</th>
             </tr>
           </thead>
           <tbody id="payBody">
-            <tr><td colspan="10" class="text-muted">読み込み中...</td></tr>
+            <tr><td colspan="12" class="text-muted">読み込み中...</td></tr>
           </tbody>
         </table>
       </div>
@@ -102,11 +102,12 @@ function render(data) {
   $('rateHoliday').value = data.rates.holiday;
 
   const total = data.rows.reduce((sum, r) => sum + r.total_pay, 0);
+  const netTotal = data.rows.reduce((sum, r) => sum + r.net_pay, 0);
   const minutes = data.rows.reduce((sum, r) => sum + r.total_minutes, 0);
-  $('payTotal').innerHTML = `<span>${data.month.replace('-', '年')}月の支給額合計</span><strong>${yen(total)}円</strong><span>総勤務時間 ${hm(minutes)}</span>`;
+  $('payTotal').innerHTML = `<span>${data.month.replace('-', '年')}月の支給額合計</span><strong>${yen(total)}円</strong><span>差引支給額の合計 ${yen(netTotal)}円</span><span>総勤務時間 ${hm(minutes)}</span>`;
 
   if (!data.rows.length) {
-    $('payBody').innerHTML = '<tr><td colspan="10" class="text-muted">対象の社員がいません。</td></tr>';
+    $('payBody').innerHTML = '<tr><td colspan="12" class="text-muted">対象の社員がいません。</td></tr>';
     return;
   }
   $('payBody').innerHTML = data.rows.map((r) => {
@@ -122,6 +123,8 @@ function render(data) {
       <td class="num">${hm(r.night_minutes)}</td>
       <td class="num">${hm(r.holiday_minutes)}</td>
       <td class="num pay-amount" title="基本 ${yen(r.base_pay)} + 時間外 ${yen(r.overtime_pay)} + 深夜 ${yen(r.night_pay)} + 休日 ${yen(r.holiday_pay)}">${r.hourly_wage ? yen(r.total_pay) : '<span class="text-muted">時給未設定</span>'}</td>
+      <td class="num">${r.hourly_wage || r.deductions_total ? yen(r.deductions_total) : '<span class="text-muted">-</span>'}</td>
+      <td class="num pay-amount">${r.hourly_wage || r.deductions_total ? yen(r.net_pay) : '<span class="text-muted">-</span>'}</td>
       <td><a class="slip-link" href="/payslip.html?id=${r.id}&month=${data.month}" data-slip="${r.id}">明細書</a></td>
     </tr>`;
   }).join('');
@@ -143,11 +146,11 @@ function render(data) {
 async function load() {
   $('wageMsg').innerHTML = '';
   Object.keys(pendingWages).forEach((k) => delete pendingWages[k]);
-  $('payBody').innerHTML = '<tr><td colspan="10" class="text-muted">読み込み中...</td></tr>';
+  $('payBody').innerHTML = '<tr><td colspan="12" class="text-muted">読み込み中...</td></tr>';
   try {
     render(await Api.request(`/admin/payroll?month=${encodeURIComponent($('month').value)}`));
   } catch (err) {
-    $('payBody').innerHTML = `<tr><td colspan="10" class="error-msg">${escapeHtml(err.message)}</td></tr>`;
+    $('payBody').innerHTML = `<tr><td colspan="12" class="error-msg">${escapeHtml(err.message)}</td></tr>`;
   }
 }
 
@@ -182,8 +185,8 @@ $('saveRatesBtn').addEventListener('click', async () => {
 
 $('csvBtn').addEventListener('click', () => {
   if (!rowsCache.length) return;
-  const header = ['社員番号', '氏名', '時給', '出勤日数', '勤務時間(分)', '時間外(分)', '深夜(分)', '休日(分)', '基本給', '時間外手当', '深夜手当', '休日手当', '支給額'];
-  const lines = rowsCache.map((r) => [r.employee_code, r.name, r.hourly_wage == null ? '' : r.hourly_wage, r.work_days, r.total_minutes, r.overtime_minutes, r.night_minutes, r.holiday_minutes, r.base_pay, r.overtime_pay, r.night_pay, r.holiday_pay, r.total_pay]
+  const header = ['社員番号', '氏名', '時給', '出勤日数', '勤務時間(分)', '時間外(分)', '深夜(分)', '休日(分)', '基本給', '時間外手当', '深夜手当', '休日手当', '支給額', '控除合計', '差引支給額'];
+  const lines = rowsCache.map((r) => [r.employee_code, r.name, r.hourly_wage == null ? '' : r.hourly_wage, r.work_days, r.total_minutes, r.overtime_minutes, r.night_minutes, r.holiday_minutes, r.base_pay, r.overtime_pay, r.night_pay, r.holiday_pay, r.total_pay, r.deductions_total, r.net_pay]
     .map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','));
   const csv = '﻿' + header.join(',') + '\n' + lines.join('\n');
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));

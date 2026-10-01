@@ -169,6 +169,21 @@ function ensureSchema() {
       await query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS site_division TEXT;`);
       // 入力方法: 'clock' = 打刻入力(ボタンで打刻) / 'manual' = 直接入力(時間を入力して登録)。既存データは打刻入力として扱う。
       await query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS input_method TEXT NOT NULL DEFAULT 'clock';`);
+      // 給与明細の控除欄(社員・月ごとに管理者が入力した金額)
+      await query(`
+        CREATE TABLE IF NOT EXISTS payroll_deductions (
+          employee_id INTEGER NOT NULL REFERENCES employees(id),
+          month TEXT NOT NULL,
+          health_insurance INTEGER NOT NULL DEFAULT 0,
+          pension INTEGER NOT NULL DEFAULT 0,
+          employment_insurance INTEGER NOT NULL DEFAULT 0,
+          income_tax INTEGER NOT NULL DEFAULT 0,
+          resident_tax INTEGER NOT NULL DEFAULT 0,
+          other INTEGER NOT NULL DEFAULT 0,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          PRIMARY KEY (employee_id, month)
+        );
+      `);
       // 給与計算用の時給(円)。未設定(NULL)の社員は支給額が0円として扱われる。
       await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS hourly_wage INTEGER;`);
       await query(`ALTER TABLE divisions ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;`);

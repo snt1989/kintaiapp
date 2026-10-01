@@ -74,7 +74,24 @@
             </tbody>
           </table>
         </section>
+        <section>
+          <h3>控除</h3>
+          <table class="slip-table">
+            <tbody id="dedBody"></tbody>
+            <tfoot><tr class="slip-total"><th>控除合計</th><td id="dTotal"></td></tr></tfoot>
+          </table>
+          <button class="btn small no-print" id="saveDedBtn" type="button" style="margin-top:10px;">控除額を保存</button>
+        </section>
       </div>
+
+      <section class="slip-net">
+        <div><span>支給額合計</span><strong id="nGross"></strong></div>
+        <div class="slip-minus">−</div>
+        <div><span>控除合計</span><strong id="nDeduct"></strong></div>
+        <div class="slip-minus">＝</div>
+        <div class="slip-net-main"><span>差引支給額</span><strong id="nNet"></strong></div>
+      </section>
+      <div id="dedMsg" class="no-print"></div>
 
       <section>
         <h3>日別の勤務</h3>
@@ -86,7 +103,7 @@
         </div>
       </section>
 
-      <p class="slip-note">社会保険料・税・各種手当は含みません。勤務時間は休憩を除き、日本時間で日ごとに集計しています。端数は支給額合計で切り捨てています。</p>
+      <p class="slip-note">控除額は管理者が入力した金額です(自動計算ではありません)。勤務時間は休憩を除き、日本時間で日ごとに集計しています。端数は支給額合計で切り捨てています。</p>
     </article>
   </main>
 </div>
@@ -107,6 +124,31 @@ const hm = (min) => `${Math.floor(min / 60)}時間${String(min % 60).padStart(2,
 const hmOrDash = (min) => (min ? hm(min) : '-');
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+let slipData = null;
+
+// 控除欄: 入力に合わせて控除合計と差引支給額をその場で更新する
+function currentDeductions() {
+  const out = {};
+  document.querySelectorAll('.ded-input').forEach((i) => { out[i.dataset.key] = i.value.trim(); });
+  return out;
+}
+function updateNet() {
+  const total = Object.values(currentDeductions()).reduce((sum, v) => sum + (/^\d+$/.test(v) ? Number(v) : 0), 0);
+  const gross = slipData.summary.total_pay;
+  $('dTotal').textContent = yen(total);
+  $('nGross').textContent = yen(gross);
+  $('nDeduct').textContent = yen(total);
+  $('nNet').textContent = yen(gross - total);
+  $('nNet').classList.toggle('slip-negative', gross - total < 0);
+}
+function renderDeductions(d) {
+  slipData = d;
+  $('dedBody').innerHTML = d.deduction_items.map((i) =>
+    `<tr><th><label for="ded_${i.key}">${esc(i.label)}</label></th><td><input type="text" inputmode="numeric" class="ded-input" id="ded_${i.key}" data-key="${i.key}" data-original="${d.deductions[i.key] || 0}" value="${d.deductions[i.key] || 0}" autocomplete="off">円</td></tr>`).join('');
+  document.querySelectorAll('.ded-input').forEach((i) => i.addEventListener('input', updateNet));
+  updateNet();
+}
+
 // 対象の社員・月は URL のクエリ、なければ直前の画面で保存した値から取得する
 function getTarget() {
   const q = new URLSearchParams(location.search);
@@ -116,6 +158,21 @@ function getTarget() {
 }
 
 $('printBtn').addEventListener('click', () => window.print());
+
+$('saveDedBtn').addEventListener('click', async () => {
+  const target = getTarget();
+  $('dedMsg').innerHTML = '';
+  $('saveDedBtn').disabled = true;
+  try {
+    await Api.request(`/admin/payroll/${encodeURIComponent(target.id)}/deductions`, { method: 'PUT', body: { month: target.month, items: currentDeductions() } });
+    document.querySelectorAll('.ded-input').forEach((i) => { i.dataset.original = i.value; });
+    $('dedMsg').innerHTML = '<div class="success-msg">控除額を保存しました。</div>';
+  } catch (err) {
+    $('dedMsg').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+  } finally {
+    $('saveDedBtn').disabled = false;
+  }
+});
 
 (async () => {
   const target = getTarget();
@@ -146,6 +203,7 @@ $('printBtn').addEventListener('click', () => window.print());
     $('pNight').textContent = yen(s.night_pay);
     $('pHoliday').textContent = yen(s.holiday_pay);
     $('pTotal').textContent = yen(s.total_pay);
+    renderDeductions(d);
     $('dayBody').innerHTML = d.days.length ? d.days.map((x) => `<tr>
       <td>${Number(x.date.slice(5, 7))}/${Number(x.date.slice(8))}(${x.weekday})</td>
       <td>${esc(x.clock_in)}</td><td>${esc(x.clock_out)}</td>

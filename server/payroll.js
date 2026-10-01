@@ -155,4 +155,22 @@ function dailyBreakdown(logs, monthPrefix = null) {
     }));
 }
 
-module.exports = { calculateEmployee, summarizeDays, dailyBreakdown, monthRangeIso, DEFAULT_RATES };
+// 控除の項目(金額は管理者が社員・月ごとに入力する)
+const DEDUCTION_ITEMS = [
+  { key: 'health_insurance', label: '健康保険料' },
+  { key: 'pension', label: '厚生年金保険料' },
+  { key: 'employment_insurance', label: '雇用保険料' },
+  { key: 'income_tax', label: '所得税' },
+  { key: 'resident_tax', label: '住民税' },
+  { key: 'other', label: 'その他控除' },
+];
+
+function emptyDeductions() {
+  return Object.fromEntries(DEDUCTION_ITEMS.map((i) => [i.key, 0]));
+}
+
+function sumDeductions(d) {
+  return DEDUCTION_ITEMS.reduce((sum, i) => sum + (Number(d && d[i.key]) || 0), 0);
+}
+
+module.exports = { DEDUCTION_ITEMS, emptyDeductions, sumDeductions, calculateEmployee, summarizeDays, dailyBreakdown, monthRangeIso, DEFAULT_RATES };

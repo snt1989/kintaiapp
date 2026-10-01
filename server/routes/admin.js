@@ -436,6 +436,7 @@ router.delete('/employees', async (req, res, next) => {
 
     await db.withTransaction(async (tx) => {
       for (const id of deletableIds) {
+        await tx.run('DELETE FROM payroll_deductions WHERE employee_id = ?', [id]);
         await tx.run('DELETE FROM employees WHERE id = ?', [id]);
       }
     });
@@ -701,6 +702,9 @@ router.get('/payroll', async (req, res, next) => {
       byEmployee.get(l.employee_id).push(l);
     }
 
+    const dedRows = await db.all('SELECT * FROM payroll_deductions WHERE month = ?', [month]);
+    const dedByEmployee = new Map(dedRows.map((d) => [d.employee_id, d]));
+
     const rows = employees
       .map((e) => ({
         id: e.id,
@@ -711,6 +715,10 @@ router.get('/payroll', async (req, res, next) => {
         hourly_wage: e.hourly_wage,
         ...payroll.calculateEmployee(byEmployee.get(e.id) || [], e.hourly_wage, rates, month),
       }))
+      .map((r) => {
+        const deductionsTotal = payroll.sumDeductions(dedByEmployee.get(r.id));
+        return { ...r, deductions_total: deductionsTotal, net_pay: r.total_pay - deductionsTotal };
+      })
       // 無効な社員は、その月に勤務がある場合だけ表示する
       .filter((r) => r.active || r.total_minutes > 0);
 
@@ -741,14 +749,57 @@ router.get('/payroll/:id/slip', async (req, res, next) => {
       [emp.id, from, to]
     );
 
+    const dedRow = await db.get('SELECT * FROM payroll_deductions WHERE employee_id = ? AND month = ?', [emp.id, month]);
+    const deductions = { ...payroll.emptyDeductions(), ...Object.fromEntries(payroll.DEDUCTION_ITEMS.map((i) => [i.key, dedRow ? Number(dedRow[i.key]) || 0 : 0])) };
+    const summary = payroll.calculateEmployee(logs, emp.hourly_wage, rates, month);
+    const deductionsTotal = payroll.sumDeductions(deductions);
+
     res.json({
       month,
       issued_on: new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10),
       employee: { id: emp.id, employee_code: emp.employee_code, name: emp.name, division: emp.division, hourly_wage: emp.hourly_wage },
       rates,
-      summary: payroll.calculateEmployee(logs, emp.hourly_wage, rates, month),
+      summary,
+      deduction_items: payroll.DEDUCTION_ITEMS,
+      deductions,
+      deductions_total: deductionsTotal,
+      net_pay: summary.total_pay - deductionsTotal,
       days: payroll.dailyBreakdown(logs, month),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 控除額の保存(社員・月ごと)。空欄は0円として保存する
+router.put('/payroll/:id/deductions', async (req, res, next) => {
+  try {
+    const { month, items } = req.body || {};
+    if (!payroll.monthRangeIso(month)) return res.status(400).json({ error: '対象月の形式が正しくありません(例: 2026-09)。' });
+    const emp = await db.get('SELECT id FROM employees WHERE id = ?', [Number(req.params.id)]);
+    if (!emp) return res.status(404).json({ error: '社員が見つかりません。' });
+
+    const values = {};
+    for (const item of payroll.DEDUCTION_ITEMS) {
+      const raw = items ? items[item.key] : '';
+      const text = raw === null || raw === undefined || raw === '' ? '0' : String(raw).trim();
+      if (!/^\d{1,7}$/.test(text)) {
+        return res.status(400).json({ error: `${item.label}は半角数字(円)で入力してください(例: 12000)。` });
+      }
+      values[item.key] = Number(text);
+    }
+
+    await db.run(
+      `INSERT INTO payroll_deductions (employee_id, month, health_insurance, pension, employment_insurance, income_tax, resident_tax, other)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (employee_id, month) DO UPDATE SET
+         health_insurance = EXCLUDED.health_insurance, pension = EXCLUDED.pension,
+         employment_insurance = EXCLUDED.employment_insurance, income_tax = EXCLUDED.income_tax,
+         resident_tax = EXCLUDED.resident_tax, other = EXCLUDED.other, updated_at = now()`,
+      [emp.id, month, values.health_insurance, values.pension, values.employment_insurance, values.income_tax, values.resident_tax, values.other]
+    );
+    const total = payroll.sumDeductions(values);
+    res.json({ deductions: values, deductions_total: total });
   } catch (err) {
     next(err);
   }
