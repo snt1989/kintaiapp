@@ -38,7 +38,7 @@
   // 既にログイン済みならそれぞれのトップ画面へ
   const existing = Api.getEmployee();
   if (Api.getToken() && existing) {
-    location.href = existing.role === 'admin' ? '/admin.html' : '/clock.html';
+    location.href = existing.role === 'admin' ? '/admin.html' : '/manual.html';
   }
 
   const form = document.getElementById('loginForm');
@@ -59,7 +59,7 @@
         body: { employee_code, password },
       });
       Api.setSession(data.token, data.employee);
-      location.href = data.employee.role === 'admin' ? '/admin.html' : '/clock.html';
+      location.href = data.employee.role === 'admin' ? '/admin.html' : '/manual.html';
     } catch (err) {
       errorBox.textContent = err.message;
       errorBox.classList.remove('hidden');

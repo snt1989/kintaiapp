@@ -60,7 +60,7 @@
   // 既にログイン済みならそれぞれのトップ画面へ
   const existing = Api.getEmployee();
   if (Api.getToken() && existing) {
-    location.href = existing.role === 'admin' ? '/admin.html' : '/clock.html';
+    location.href = existing.role === 'admin' ? '/admin.html' : '/manual.html';
   }
 
   const form = document.getElementById('registerForm');
@@ -124,7 +124,7 @@
   });
 
   proceedBtn.addEventListener('click', () => {
-    location.href = '/clock.html';
+    location.href = '/manual.html';
   });
 </script>
 </body>

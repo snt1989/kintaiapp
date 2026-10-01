@@ -91,7 +91,7 @@
   // 既にログイン済みならそれぞれのトップ画面へ
   const existing = Api.getEmployee();
   if (Api.getToken() && existing) {
-    location.href = existing.role === 'admin' ? '/admin.html' : '/clock.html';
+    location.href = existing.role === 'admin' ? '/admin.html' : '/manual.html';
   }
 
   let keyRequired = false;
