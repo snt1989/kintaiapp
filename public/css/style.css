@@ -691,3 +691,42 @@ th { color: var(--color-text-muted); font-weight: 600; background: #fafafa; }
 .pay-table .wage-input.pay-nowage { background: #fffbeb; }
 .pay-amount { font-weight: 700; }
 .pay-flag { display: inline-block; padding: 1px 6px; border-radius: 6px; background: #fee2e2; color: #b91c1c; font-size: 11px; font-weight: 700; }
+
+/* ---- 給与明細書 ---- */
+.slip-link { font-size: 13px; font-weight: 700; color: var(--color-primary); white-space: nowrap; }
+.slip-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; margin-bottom: 14px; }
+.slip-actions .btn { margin-top: 0; text-decoration: none; }
+.slip {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 28px 28px 22px;
+  max-width: 820px;
+  margin: 0 auto;
+}
+.slip-head { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-end; padding-bottom: 14px; border-bottom: 2px solid var(--color-text); }
+.slip-company { font-size: 13px; color: var(--color-text-muted); font-weight: 700; letter-spacing: 0.08em; }
+.slip-title { margin: 2px 0 0; font-size: 24px; letter-spacing: 0.12em; }
+.slip-meta { display: flex; gap: 20px; font-size: 13px; }
+.slip-meta span, .slip-person span { display: block; font-size: 11px; color: var(--color-text-muted); }
+.slip-meta strong, .slip-person strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.slip-person { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--color-border); }
+.slip h3 { font-size: 13px; margin: 18px 0 8px; letter-spacing: 0.06em; }
+.slip-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 28px; }
+.slip-table { width: 100%; border-collapse: collapse; }
+.slip-table th, .slip-table td { padding: 8px 4px; border-bottom: 1px solid var(--color-border); font-size: 13px; background: none; }
+.slip-table th { text-align: left; font-weight: 500; color: var(--color-text-muted); }
+.slip-table td { text-align: right; font-variant-numeric: tabular-nums; }
+.slip-table .slip-total th, .slip-table .slip-total td { font-size: 16px; font-weight: 800; color: var(--color-text); border-bottom: 2px solid var(--color-text); }
+.slip-days td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.slip-days th, .slip-days td { font-size: 12px; padding: 6px 8px; white-space: nowrap; }
+.slip-note { margin: 16px 0 0; font-size: 11px; color: var(--color-text-muted); }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+  .app, main { padding: 0; max-width: none; }
+  .slip { border: none; box-shadow: none; padding: 0; max-width: none; }
+}
+.slip-days th:nth-child(n+4) { text-align: right; }

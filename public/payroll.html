@@ -51,11 +51,11 @@
           <thead>
             <tr>
               <th>社員番号</th><th>氏名</th><th>時給(円)</th><th>出勤日数</th>
-              <th>勤務時間</th><th>時間外</th><th>深夜</th><th>休日</th><th>支給額(円)</th>
+              <th>勤務時間</th><th>時間外</th><th>深夜</th><th>休日</th><th>支給額(円)</th><th>明細書</th>
             </tr>
           </thead>
           <tbody id="payBody">
-            <tr><td colspan="9" class="text-muted">読み込み中...</td></tr>
+            <tr><td colspan="10" class="text-muted">読み込み中...</td></tr>
           </tbody>
         </table>
       </div>
@@ -106,7 +106,7 @@ function render(data) {
   $('payTotal').innerHTML = `<span>${data.month.replace('-', '年')}月の支給額合計</span><strong>${yen(total)}円</strong><span>総勤務時間 ${hm(minutes)}</span>`;
 
   if (!data.rows.length) {
-    $('payBody').innerHTML = '<tr><td colspan="9" class="text-muted">対象の社員がいません。</td></tr>';
+    $('payBody').innerHTML = '<tr><td colspan="10" class="text-muted">対象の社員がいません。</td></tr>';
     return;
   }
   $('payBody').innerHTML = data.rows.map((r) => {
@@ -122,8 +122,13 @@ function render(data) {
       <td class="num">${hm(r.night_minutes)}</td>
       <td class="num">${hm(r.holiday_minutes)}</td>
       <td class="num pay-amount" title="基本 ${yen(r.base_pay)} + 時間外 ${yen(r.overtime_pay)} + 深夜 ${yen(r.night_pay)} + 休日 ${yen(r.holiday_pay)}">${r.hourly_wage ? yen(r.total_pay) : '<span class="text-muted">時給未設定</span>'}</td>
+      <td><a class="slip-link" href="/payslip.html?id=${r.id}&month=${data.month}" data-slip="${r.id}">明細書</a></td>
     </tr>`;
   }).join('');
+
+  document.querySelectorAll('.slip-link').forEach((a) => {
+    a.addEventListener('click', () => { try { sessionStorage.setItem('payslip_target', JSON.stringify({ id: a.dataset.slip, month: data.month })); } catch (e) { /* 保存できなくても、リンクのクエリで遷移できる */ } });
+  });
 
   document.querySelectorAll('.wage-input').forEach((input) => {
     input.addEventListener('input', () => {
@@ -138,11 +143,11 @@ function render(data) {
 async function load() {
   $('wageMsg').innerHTML = '';
   Object.keys(pendingWages).forEach((k) => delete pendingWages[k]);
-  $('payBody').innerHTML = '<tr><td colspan="9" class="text-muted">読み込み中...</td></tr>';
+  $('payBody').innerHTML = '<tr><td colspan="10" class="text-muted">読み込み中...</td></tr>';
   try {
     render(await Api.request(`/admin/payroll?month=${encodeURIComponent($('month').value)}`));
   } catch (err) {
-    $('payBody').innerHTML = `<tr><td colspan="9" class="error-msg">${escapeHtml(err.message)}</td></tr>`;
+    $('payBody').innerHTML = `<tr><td colspan="10" class="error-msg">${escapeHtml(err.message)}</td></tr>`;
   }
 }
 

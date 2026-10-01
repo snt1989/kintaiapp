@@ -59,7 +59,18 @@ function summarizeDays(logs) {
   const incompleteDate = workStart !== null ? jstDateKey(jstDayStart(workStart)) : null;
 
   const days = new Map(); // dateKey -> { total, night, sunday }
+  const dayOf = (key, dayStart) => days.get(key) || { date: key, total: 0, night: 0, gross: 0, first: null, last: null, sunday: new Date(dayStart + JST_OFFSET_MS).getUTCDay() === 0 };
   for (const w of work) {
+    // 日ごとの出勤・退勤の時刻と、休憩を含む拘束時間(休憩時間の算出用)
+    for (let c = w.start; c < w.end;) {
+      const ds = jstDayStart(c); const ce = Math.min(w.end, ds + DAY); const k = jstDateKey(ds);
+      const dd = dayOf(k, ds);
+      dd.gross += (ce - c) / MIN;
+      if (dd.first === null || c < dd.first) dd.first = c;
+      if (dd.last === null || ce > dd.last) dd.last = ce;
+      days.set(k, dd);
+      c = ce;
+    }
     for (const piece of subtractIntervals(w, breaks)) {
       let cursor = piece.start;
       while (cursor < piece.end) {
@@ -67,7 +78,7 @@ function summarizeDays(logs) {
         const dayEnd = dayStart + DAY;
         const segEnd = Math.min(piece.end, dayEnd);
         const key = jstDateKey(dayStart);
-        const d = days.get(key) || { date: key, total: 0, night: 0, sunday: new Date(dayStart + JST_OFFSET_MS).getUTCDay() === 0 };
+        const d = dayOf(key, dayStart);
         d.total += (segEnd - cursor) / MIN;
         // 深夜: 0:00-5:00 と 22:00-24:00
         d.night += (overlapMs(cursor, segEnd, dayStart, dayStart + 5 * 60 * MIN) + overlapMs(cursor, segEnd, dayStart + 22 * 60 * MIN, dayEnd)) / MIN;
@@ -125,4 +136,23 @@ function monthRangeIso(month) {
   return { startIso: start.toISOString(), endIso: end.toISOString() };
 }
 
-module.exports = { calculateEmployee, summarizeDays, monthRangeIso, DEFAULT_RATES };
+// 給与明細書用の日別内訳(対象月の勤務日のみ)
+function dailyBreakdown(logs, monthPrefix = null) {
+  const { days } = summarizeDays(logs);
+  const hhmm = (ms) => new Date(ms + JST_OFFSET_MS).toISOString().slice(11, 16);
+  return days
+    .filter((d) => d.total > 0 && (!monthPrefix || d.date.startsWith(monthPrefix)))
+    .map((d) => ({
+      date: d.date,
+      weekday: ['日', '月', '火', '水', '木', '金', '土'][new Date(`${d.date}T00:00:00Z`).getUTCDay()],
+      clock_in: d.first === null ? '' : hhmm(d.first),
+      clock_out: d.last === null ? '' : hhmm(d.last),
+      break_minutes: Math.max(0, Math.round(d.gross - d.total)),
+      worked_minutes: Math.round(d.total),
+      overtime_minutes: d.sunday ? 0 : Math.round(Math.max(0, d.total - DAILY_LEGAL_MINUTES)),
+      night_minutes: Math.round(d.night),
+      holiday_minutes: d.sunday ? Math.round(d.total) : 0,
+    }));
+}
+
+module.exports = { calculateEmployee, summarizeDays, dailyBreakdown, monthRangeIso, DEFAULT_RATES };

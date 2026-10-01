@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>給与明細書 | 三桜 勤怠管理システム</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="app wide">
+  <header class="topbar no-print">
+    <h1>給与明細書</h1>
+    <div class="user-info">
+      <span id="userName"></span>
+      <button class="logout-btn" id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <nav class="admin-subnav no-print">
+    <a href="/admin.html">勤怠ログ</a>
+    <a href="/employees.html">社員管理</a>
+    <a href="/master.html">マスタ管理</a>
+    <a href="/payroll.html" class="active">給与計算</a>
+  </nav>
+
+  <main>
+    <div class="slip-actions no-print">
+      <a class="btn secondary small" id="backLink" href="/payroll.html">← 給与計算に戻る</a>
+      <button class="btn small" id="printBtn" type="button">印刷する</button>
+    </div>
+    <div id="slipError"></div>
+
+    <article class="slip" id="slip" hidden>
+      <header class="slip-head">
+        <div>
+          <div class="slip-company">株式会社三桜</div>
+          <h2 class="slip-title">給与明細書</h2>
+        </div>
+        <div class="slip-meta">
+          <div><span>対象月</span><strong id="sMonth"></strong></div>
+          <div><span>発行日</span><strong id="sIssued"></strong></div>
+        </div>
+      </header>
+
+      <section class="slip-person">
+        <div><span>氏名</span><strong id="sName"></strong></div>
+        <div><span>社員番号</span><strong id="sCode"></strong></div>
+        <div><span>所属事業部</span><strong id="sDivision"></strong></div>
+        <div><span>時給</span><strong id="sWage"></strong></div>
+      </section>
+
+      <div class="slip-grid">
+        <section>
+          <h3>勤怠</h3>
+          <table class="slip-table">
+            <tbody>
+              <tr><th>出勤日数</th><td id="aDays"></td></tr>
+              <tr><th>総勤務時間</th><td id="aTotal"></td></tr>
+              <tr><th>時間外(1日8時間超)</th><td id="aOvertime"></td></tr>
+              <tr><th>深夜(22時〜5時)</th><td id="aNight"></td></tr>
+              <tr><th>休日(日曜)</th><td id="aHoliday"></td></tr>
+            </tbody>
+          </table>
+        </section>
+        <section>
+          <h3>支給</h3>
+          <table class="slip-table">
+            <tbody>
+              <tr><th>基本給</th><td id="pBase"></td></tr>
+              <tr><th id="thOvertime">時間外手当</th><td id="pOvertime"></td></tr>
+              <tr><th id="thNight">深夜手当</th><td id="pNight"></td></tr>
+              <tr><th id="thHoliday">休日手当</th><td id="pHoliday"></td></tr>
+              <tr class="slip-total"><th>支給額合計</th><td id="pTotal"></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+
+      <section>
+        <h3>日別の勤務</h3>
+        <div class="table-wrap">
+          <table class="slip-days">
+            <thead><tr><th>日付</th><th>出勤</th><th>退勤</th><th>休憩</th><th>勤務時間</th><th>時間外</th><th>深夜</th><th>休日</th></tr></thead>
+            <tbody id="dayBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <p class="slip-note">社会保険料・税・各種手当は含みません。勤務時間は休憩を除き、日本時間で日ごとに集計しています。端数は支給額合計で切り捨てています。</p>
+    </article>
+  </main>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+Api.requireAdmin();
+const employee = Api.getEmployee();
+document.getElementById('userName').textContent = `${employee.name} (管理者)`;
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  Api.clearSession();
+  location.href = '/index.html';
+});
+
+const $ = (id) => document.getElementById(id);
+const yen = (n) => `${Number(n).toLocaleString('ja-JP')}円`;
+const hm = (min) => `${Math.floor(min / 60)}時間${String(min % 60).padStart(2, '0')}分`;
+const hmOrDash = (min) => (min ? hm(min) : '-');
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// 対象の社員・月は URL のクエリ、なければ直前の画面で保存した値から取得する
+function getTarget() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('id') && q.get('month')) return { id: q.get('id'), month: q.get('month') };
+  try { const t = JSON.parse(sessionStorage.getItem('payslip_target') || 'null'); if (t && t.id && t.month) return t; } catch (e) { /* 取得できない場合は案内を表示 */ }
+  return null;
+}
+
+$('printBtn').addEventListener('click', () => window.print());
+
+(async () => {
+  const target = getTarget();
+  if (!target) {
+    $('slipError').innerHTML = '<div class="error-msg">対象の社員が選ばれていません。「給与計算」の一覧から「明細書」を開いてください。</div>';
+    return;
+  }
+  try {
+    const d = await Api.request(`/admin/payroll/${encodeURIComponent(target.id)}/slip?month=${encodeURIComponent(target.month)}`);
+    const s = d.summary;
+    const [y, m] = d.month.split('-');
+    $('sMonth').textContent = `${y}年${Number(m)}月分`;
+    $('sIssued').textContent = d.issued_on.replace(/-/g, '/');
+    $('sName').textContent = d.employee.name;
+    $('sCode').textContent = d.employee.employee_code;
+    $('sDivision').textContent = d.employee.division || '-';
+    $('sWage').textContent = d.employee.hourly_wage ? yen(d.employee.hourly_wage) : '未設定';
+    $('aDays').textContent = `${s.work_days}日`;
+    $('aTotal').textContent = hm(s.total_minutes);
+    $('aOvertime').textContent = hmOrDash(s.overtime_minutes);
+    $('aNight').textContent = hmOrDash(s.night_minutes);
+    $('aHoliday').textContent = hmOrDash(s.holiday_minutes);
+    $('pBase').textContent = yen(s.base_pay);
+    $('thOvertime').textContent = `時間外手当(+${d.rates.overtime}%)`;
+    $('thNight').textContent = `深夜手当(+${d.rates.night}%)`;
+    $('thHoliday').textContent = `休日手当(+${d.rates.holiday}%)`;
+    $('pOvertime').textContent = yen(s.overtime_pay);
+    $('pNight').textContent = yen(s.night_pay);
+    $('pHoliday').textContent = yen(s.holiday_pay);
+    $('pTotal').textContent = yen(s.total_pay);
+    $('dayBody').innerHTML = d.days.length ? d.days.map((x) => `<tr>
+      <td>${Number(x.date.slice(5, 7))}/${Number(x.date.slice(8))}(${x.weekday})</td>
+      <td>${esc(x.clock_in)}</td><td>${esc(x.clock_out)}</td>
+      <td class="num">${hmOrDash(x.break_minutes)}</td><td class="num">${hm(x.worked_minutes)}</td>
+      <td class="num">${hmOrDash(x.overtime_minutes)}</td><td class="num">${hmOrDash(x.night_minutes)}</td><td class="num">${hmOrDash(x.holiday_minutes)}</td>
+    </tr>`).join('') : '<tr><td colspan="8" class="text-muted">この月の勤務はありません。</td></tr>';
+    if (!d.employee.hourly_wage) {
+      $('slipError').innerHTML = '<div class="error-msg no-print">時給が未設定のため、支給額は0円です。「給与計算」画面で時給を入力してください。</div>';
+    }
+    $('slip').hidden = false;
+    document.title = `給与明細書 ${d.employee.name} ${y}年${Number(m)}月分`;
+  } catch (err) {
+    $('slipError').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>

@@ -720,6 +720,40 @@ router.get('/payroll', async (req, res, next) => {
   }
 });
 
+// 個人の給与明細書(対象月の集計と日別の内訳)
+router.get('/payroll/:id/slip', async (req, res, next) => {
+  try {
+    const month = req.query.month;
+    const range = payroll.monthRangeIso(month);
+    if (!range) return res.status(400).json({ error: '対象月の形式が正しくありません(例: 2026-09)。' });
+
+    const emp = await db.get(
+      'SELECT id, employee_code, name, role, division, hourly_wage FROM employees WHERE id = ?',
+      [Number(req.params.id)]
+    );
+    if (!emp) return res.status(404).json({ error: '社員が見つかりません。' });
+
+    const rates = await loadRates();
+    const from = new Date(new Date(range.startIso).getTime() - 24 * 3600 * 1000).toISOString();
+    const to = new Date(new Date(range.endIso).getTime() + 24 * 3600 * 1000).toISOString();
+    const logs = await db.all(
+      'SELECT type, timestamp FROM attendance_logs WHERE employee_id = ? AND timestamp >= ? AND timestamp < ?',
+      [emp.id, from, to]
+    );
+
+    res.json({
+      month,
+      issued_on: new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10),
+      employee: { id: emp.id, employee_code: emp.employee_code, name: emp.name, division: emp.division, hourly_wage: emp.hourly_wage },
+      rates,
+      summary: payroll.calculateEmployee(logs, emp.hourly_wage, rates, month),
+      days: payroll.dailyBreakdown(logs, month),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // 時給の保存(複数人まとめて)。空欄・null は未設定に戻す
 router.put('/payroll/wages', async (req, res, next) => {
   try {
