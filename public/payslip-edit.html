@@ -65,6 +65,7 @@
             <thead><tr><th>項目</th><th></th><th>金額</th></tr></thead>
             <tbody id="dedBody"></tbody>
           </table>
+          <div id="insWarn"></div>
           <p class="text-muted" id="taxInfo" style="font-size:12px;margin-top:8px;"></p>
         </section>
       </div>
@@ -139,6 +140,15 @@ function readField(input, kind) {
 }
 function safeRead(input, kind) { try { return readField(input, kind); } catch (e) { return undefined; } }
 
+// 未加入の保険の保険料が入力されているときに注意を出す(入力のたびに更新)
+function updateInsWarn() {
+  const num = (k) => Number(($(`ded_${k}`) || {}).value) || 0;
+  const warns = [];
+  if (!data.employee.social_insurance && (num('health_insurance') || num('pension'))) warns.push('社会保険は未加入ですが、健康保険料・厚生年金保険料が入力されています。');
+  if (!data.employee.labor_insurance && num('employment_insurance')) warns.push('労働保険は未加入ですが、雇用保険料が入力されています。');
+  $('insWarn').innerHTML = warns.map((w) => `<div class="error-msg" style="margin-top:8px;">${esc(w)}(社員情報の編集で加入状況を直せます)</div>`).join('');
+}
+
 // 画面上の入力から、支給額と差引支給額をその場で計算して表示する(保存時はサーバーの計算が正)
 function recalc() {
   const wage = Number(data.employee.hourly_wage) > 0 ? Number(data.employee.hourly_wage) : 0;
@@ -164,6 +174,7 @@ function recalc() {
   let ded = 0;
   for (const i of data.deduction_items) ded += safeRead($(`ded_${i.key}`), 'yen') || 0;
   document.querySelectorAll('[id^=att_], [id^=pay_]').forEach((i) => i.classList.toggle('is-set', i.value.trim() !== ''));
+  updateInsWarn();
   $('nGross').textContent = yen(gross);
   $('nDeduct').textContent = yen(ded);
   $('nNet').textContent = yen(gross - ded);

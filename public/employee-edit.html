@@ -82,6 +82,19 @@
           </div>
         </div>
 
+        <div class="reg-section">保険の加入状況</div>
+        <div class="reg-grid">
+          <div>
+            <label for="empSocial">社会保険(健康保険・厚生年金保険)</label>
+            <select id="empSocial"><option value="1">加入</option><option value="0">未加入</option></select>
+          </div>
+          <div>
+            <label for="empLabor">労働保険(雇用保険)</label>
+            <select id="empLabor"><option value="1">加入</option><option value="0">未加入</option></select>
+          </div>
+        </div>
+        <p class="text-muted reg-hint">保険料は、給与明細の編集ページで月ごとに入力します。未加入の社員に保険料を入力すると、明細の編集ページに注意を表示します。</p>
+
         <div class="reg-section">給与・所得税</div>
         <div class="reg-grid">
           <div>
@@ -151,6 +164,8 @@ function fillForm(id) {
   $('empDivision').value = e.division || '';
   $('empActive').value = e.active ? '1' : '0';
   $('empPassword').value = '';
+  $('empSocial').value = e.social_insurance ? '1' : '0';
+  $('empLabor').value = e.labor_insurance ? '1' : '0';
   $('empWage').value = e.hourly_wage == null ? '' : e.hourly_wage;
   $('empTaxTable').value = e.tax_table === 'otsu' ? 'otsu' : 'kou';
   $('empDependents').value = e.dependents || 0;
@@ -171,6 +186,8 @@ $('editForm').addEventListener('submit', async (ev) => {
     role: $('empRole').value,
     division: $('empDivision').value,
     active: $('empActive').value === '1' ? 1 : 0,
+    social_insurance: $('empSocial').value,
+    labor_insurance: $('empLabor').value,
     hourly_wage: $('empWage').value.trim(),
     tax_table: $('empTaxTable').value,
     dependents: $('empTaxTable').value === 'otsu' ? '0' : $('empDependents').value.trim(),

@@ -200,6 +200,9 @@ function ensureSchema() {
       // 所得税の自動計算に使う項目: 税区分('kou'=甲欄 / 'otsu'=乙欄)と、扶養親族等の数(控除対象配偶者を含む)
       await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS tax_table TEXT NOT NULL DEFAULT 'kou';`);
       await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS dependents INTEGER NOT NULL DEFAULT 0;`);
+      // 保険の加入状況(1=加入 / 0=未加入): 社会保険=健康保険・厚生年金保険、労働保険=雇用保険(労災保険は全員が対象のため管理しない)
+      await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS social_insurance INTEGER NOT NULL DEFAULT 0;`);
+      await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS labor_insurance INTEGER NOT NULL DEFAULT 0;`);
       // 所得税を手入力した月は 1、自動計算する月は 0。この列を追加する前に入力済みだった所得税は、手入力として残す。
       const taxModeColumn = await get(
         "SELECT 1 AS found FROM information_schema.columns WHERE table_name = 'payroll_deductions' AND column_name = 'income_tax_manual'"

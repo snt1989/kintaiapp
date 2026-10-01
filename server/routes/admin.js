@@ -293,7 +293,7 @@ router.put('/settings/next-employee-code', async (req, res, next) => {
 
 // ---- 社員管理 ----
 
-const EMPLOYEE_COLUMNS = 'id, employee_code, name, last_name, first_name, role, active, division, hourly_wage, tax_table, dependents, created_at';
+const EMPLOYEE_COLUMNS = 'id, employee_code, name, last_name, first_name, role, active, division, hourly_wage, tax_table, dependents, social_insurance, labor_insurance, created_at';
 
 // 税区分・扶養親族等の数・時給の入力チェック。指定がない項目は含めない
 function parsePayFields(body, { requireAll = false } = {}) {
@@ -310,6 +310,12 @@ function parsePayFields(body, { requireAll = false } = {}) {
       return { error: `扶養親族等の数は0〜${payroll.MAX_DEPENDENTS}の半角数字で入力してください。` };
     }
     out.dependents = Number(v);
+  }
+  for (const [key, label] of [['social_insurance', '社会保険'], ['labor_insurance', '労働保険']]) {
+    if (body[key] === undefined && !requireAll) continue;
+    const v = body[key] === undefined || isBlank(body[key]) ? '0' : String(body[key]).trim().toLowerCase();
+    if (!['0', '1', 'true', 'false'].includes(v)) return { error: `${label}の加入状況は「加入」「未加入」のどちらかを選んでください。` };
+    out[key] = v === '1' || v === 'true' ? 1 : 0;
   }
   if (body.hourly_wage !== undefined) {
     if (isBlank(body.hourly_wage)) out.hourly_wage = null;
@@ -359,9 +365,10 @@ router.post('/employees', async (req, res, next) => {
     const nameValue = combineName(lastNameValue, firstNameValue);
     const hash = bcrypt.hashSync(password, 10);
     const inserted = await db.get(
-      'INSERT INTO employees (employee_code, name, last_name, first_name, password_hash, role, division, hourly_wage, tax_table, dependents) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      'INSERT INTO employees (employee_code, name, last_name, first_name, password_hash, role, division, hourly_wage, tax_table, dependents, social_insurance, labor_insurance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
       [String(employee_code).trim(), nameValue, lastNameValue, firstNameValue, hash, roleValue, divisionValue,
-        pay.value.hourly_wage === undefined ? null : pay.value.hourly_wage, pay.value.tax_table, pay.value.dependents]
+        pay.value.hourly_wage === undefined ? null : pay.value.hourly_wage, pay.value.tax_table, pay.value.dependents,
+        pay.value.social_insurance, pay.value.labor_insurance]
     );
 
     const employee = await db.get(`SELECT ${EMPLOYEE_COLUMNS} FROM employees WHERE id = ?`, [inserted.id]);
@@ -532,10 +539,12 @@ router.put('/employees/:id', async (req, res, next) => {
     const nextTaxTable = pay.value.tax_table !== undefined ? pay.value.tax_table : employee.tax_table;
     const nextDependents = pay.value.dependents !== undefined ? pay.value.dependents : employee.dependents;
     const nextWage = pay.value.hourly_wage !== undefined ? pay.value.hourly_wage : employee.hourly_wage;
+    const nextSocial = pay.value.social_insurance !== undefined ? pay.value.social_insurance : employee.social_insurance;
+    const nextLabor = pay.value.labor_insurance !== undefined ? pay.value.labor_insurance : employee.labor_insurance;
 
     await db.run(
-      'UPDATE employees SET employee_code = ?, name = ?, last_name = ?, first_name = ?, role = ?, active = ?, division = ?, hourly_wage = ?, tax_table = ?, dependents = ? WHERE id = ?',
-      [nextCode, nextName, nextLastName, nextFirstName, nextRole, nextActive, nextDivision, nextWage, nextTaxTable, nextDependents, id]
+      'UPDATE employees SET employee_code = ?, name = ?, last_name = ?, first_name = ?, role = ?, active = ?, division = ?, hourly_wage = ?, tax_table = ?, dependents = ?, social_insurance = ?, labor_insurance = ? WHERE id = ?',
+      [nextCode, nextName, nextLastName, nextFirstName, nextRole, nextActive, nextDivision, nextWage, nextTaxTable, nextDependents, nextSocial, nextLabor, id]
     );
 
     if (new_password) {
@@ -731,7 +740,7 @@ router.get('/payroll', async (req, res, next) => {
 
     const rates = await loadRates();
     const employees = await db.all(
-      'SELECT id, employee_code, name, role, active, division, hourly_wage, tax_table, dependents FROM employees ORDER BY employee_code'
+      'SELECT id, employee_code, name, role, active, division, hourly_wage, tax_table, dependents, social_insurance, labor_insurance FROM employees ORDER BY employee_code'
     );
     // 日をまたぐ勤務を正しく集計するため、前後1日ぶん多めに取得する
     const from = new Date(new Date(range.startIso).getTime() - 24 * 3600 * 1000).toISOString();
@@ -761,6 +770,8 @@ router.get('/payroll', async (req, res, next) => {
         hourly_wage: e.hourly_wage,
         tax_table: e.tax_table,
         dependents: e.dependents,
+        social_insurance: e.social_insurance,
+        labor_insurance: e.labor_insurance,
         ...payroll.finalizeEmployee(
           payroll.calculateEmployee(byEmployee.get(e.id) || [], e.hourly_wage, rates, month),
           adjByEmployee.get(e.id),
@@ -797,7 +808,7 @@ router.get('/payroll/:id/slip', async (req, res, next) => {
     if (!range) return res.status(400).json({ error: '対象月の形式が正しくありません(例: 2026-09)。' });
 
     const emp = await db.get(
-      'SELECT id, employee_code, name, role, division, hourly_wage, tax_table, dependents FROM employees WHERE id = ?',
+      'SELECT id, employee_code, name, role, division, hourly_wage, tax_table, dependents, social_insurance, labor_insurance FROM employees WHERE id = ?',
       [Number(req.params.id)]
     );
     if (!emp) return res.status(404).json({ error: '社員が見つかりません。' });
@@ -825,6 +836,7 @@ router.get('/payroll/:id/slip', async (req, res, next) => {
       employee: {
         id: emp.id, employee_code: emp.employee_code, name: emp.name, division: emp.division, hourly_wage: emp.hourly_wage,
         tax_table: emp.tax_table, dependents: emp.dependents,
+        social_insurance: emp.social_insurance, labor_insurance: emp.labor_insurance,
       },
       rates,
       summary,

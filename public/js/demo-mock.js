@@ -389,6 +389,8 @@ function loadPayroll() {
       hourly_wage: o.wage === undefined ? null : o.wage,
       tax_table: o.taxTable === 'otsu' ? 'otsu' : 'kou',
       dependents: o.dependents || 0,
+      social_insurance: o.social ? 1 : 0,
+      labor_insurance: o.labor ? 1 : 0,
       created_at: new Date().toISOString(),
     };
     s.employees.push(e);
@@ -438,8 +440,8 @@ function loadPayroll() {
     ['建設事業部', '設備事業部', '製造事業部', '管理部'].forEach(function (n) { addDivision(s, n); });
 
     addEmployee(s, { code: '0001', last: '佐藤', first: '管理', role: 'admin', division: '管理部' });
-    var tanaka = addEmployee(s, { code: '0002', last: '田中', first: '一郎', division: '建設事業部', wage: 1500, dependents: 1 });
-    var suzuki = addEmployee(s, { code: '0003', last: '鈴木', first: '花子', division: '設備事業部', wage: 1400 });
+    var tanaka = addEmployee(s, { code: '0002', last: '田中', first: '一郎', division: '建設事業部', wage: 1500, dependents: 1, social: 1, labor: 1 });
+    var suzuki = addEmployee(s, { code: '0003', last: '鈴木', first: '花子', division: '設備事業部', wage: 1400, labor: 1 });
     var takahashi = addEmployee(s, { code: '0004', last: '高橋', first: '健太', role: 'contractor', division: '建設事業部', wage: 1800 });
     var ito = addEmployee(s, { code: '0005', last: '伊藤', first: '美咲', role: 'partner', division: '設備事業部', wage: 1300 });
     addEmployee(s, { code: '0006', last: '渡辺', first: '直樹', division: '製造事業部', wage: 1450, active: 0 });
@@ -549,7 +551,8 @@ function loadPayroll() {
     return {
       id: e.id, employee_code: e.employee_code, name: e.name, last_name: e.last_name, first_name: e.first_name,
       role: e.role, active: e.active, division: e.division, hourly_wage: e.hourly_wage,
-      tax_table: e.tax_table === 'otsu' ? 'otsu' : 'kou', dependents: e.dependents || 0, created_at: e.created_at,
+      tax_table: e.tax_table === 'otsu' ? 'otsu' : 'kou', dependents: e.dependents || 0,
+      social_insurance: e.social_insurance ? 1 : 0, labor_insurance: e.labor_insurance ? 1 : 0, created_at: e.created_at,
     };
   }
   function divisionWithCount(d) {
@@ -867,6 +870,14 @@ function loadPayroll() {
       if (!/^\d{1,2}$/.test(d) || Number(d) > payroll.MAX_DEPENDENTS) return { error: '扶養親族等の数は0〜' + payroll.MAX_DEPENDENTS + 'の半角数字で入力してください。' };
       out.dependents = Number(d);
     }
+    var flags = [['social_insurance', '社会保険'], ['labor_insurance', '労働保険']];
+    for (var f = 0; f < flags.length; f += 1) {
+      var key = flags[f][0];
+      if (body[key] === undefined && !requireAll) continue;
+      var fv = body[key] === undefined || isBlank(body[key]) ? '0' : String(body[key]).trim().toLowerCase();
+      if (['0', '1', 'true', 'false'].indexOf(fv) === -1) return { error: flags[f][1] + 'の加入状況は「加入」「未加入」のどちらかを選んでください。' };
+      out[key] = fv === '1' || fv === 'true' ? 1 : 0;
+    }
     if (body.hourly_wage !== undefined) {
       if (isBlank(body.hourly_wage)) out.hourly_wage = null;
       else if (!/^\d{1,6}$/.test(String(body.hourly_wage).trim())) return { error: '時給は半角数字(円)で入力してください(例: 1500)。' };
@@ -891,6 +902,7 @@ function loadPayroll() {
     var e = addEmployee(state, {
       code: code, last: String(b.last_name).trim(), first: String(b.first_name).trim(), password: String(b.password), role: role, division: division,
       wage: pay.value.hourly_wage === undefined ? null : pay.value.hourly_wage, taxTable: pay.value.tax_table, dependents: pay.value.dependents,
+      social: pay.value.social_insurance, labor: pay.value.labor_insurance,
     });
     return ok({ employee: listedEmployee(e) });
   });
@@ -975,10 +987,12 @@ function loadPayroll() {
     }
     if (division && !findDivisionByName(division)) return fail(400, '指定された事業部はマスタに登録されていません。');
     if (b.new_password && String(b.new_password).length < 3) return fail(400, 'パスワードは3文字以上にしてください。');
-    var pay = parsePayFields({ tax_table: b.tax_table, dependents: b.dependents, hourly_wage: b.hourly_wage }, false);
+    var pay = parsePayFields({ tax_table: b.tax_table, dependents: b.dependents, hourly_wage: b.hourly_wage, social_insurance: b.social_insurance, labor_insurance: b.labor_insurance }, false);
     if (pay.error) return fail(400, pay.error);
     Object.assign(e, { employee_code: code, name: name, last_name: last, first_name: first, role: role, active: active, division: division });
     if (pay.value.hourly_wage !== undefined) e.hourly_wage = pay.value.hourly_wage;
+    if (pay.value.social_insurance !== undefined) e.social_insurance = pay.value.social_insurance;
+    if (pay.value.labor_insurance !== undefined) e.labor_insurance = pay.value.labor_insurance;
     if (pay.value.tax_table !== undefined) e.tax_table = pay.value.tax_table;
     if (pay.value.dependents !== undefined) e.dependents = pay.value.dependents;
     if (b.new_password) e.password = String(b.new_password);
@@ -1098,6 +1112,7 @@ function loadPayroll() {
       return Object.assign({
         id: e.id, employee_code: e.employee_code, name: e.name, division: e.division, active: e.active, hourly_wage: e.hourly_wage,
         tax_table: emp.tax_table, dependents: emp.dependents,
+        social_insurance: e.social_insurance ? 1 : 0, labor_insurance: e.labor_insurance ? 1 : 0,
       }, fin, {
         income_tax: tax.deductions.income_tax, income_tax_auto: tax.income_tax_auto,
         deductions_total: deductionsTotal, net_pay: fin.total_pay - deductionsTotal,
@@ -1129,6 +1144,7 @@ function loadPayroll() {
       employee: {
         id: emp.id, employee_code: emp.employee_code, name: emp.name, division: emp.division, hourly_wage: emp.hourly_wage,
         tax_table: taxEmp.tax_table, dependents: taxEmp.dependents,
+        social_insurance: emp.social_insurance ? 1 : 0, labor_insurance: emp.labor_insurance ? 1 : 0,
       },
       rates: rates,
       summary: summary,
