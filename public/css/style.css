@@ -660,3 +660,34 @@ th { color: var(--color-text-muted); font-weight: 600; background: #fafafa; }
   white-space: nowrap;
 }
 .method-tag.manual { background: #fef3c7; color: #92400e; }
+
+/* ---- 給与計算画面 ---- */
+.pay-rates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+.pay-rates-title { font-weight: 700; font-size: 13px; }
+.pay-rates label { margin: 0; font-size: 12px; color: var(--color-text-muted); }
+.pay-rates input { width: 76px; padding: 8px 10px; }
+.pay-rates .btn { margin-top: 0; }
+.pay-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+.pay-total strong { font-size: 24px; color: var(--color-text); font-variant-numeric: tabular-nums; }
+.pay-table td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pay-table th { white-space: nowrap; }
+.pay-table .wage-input { width: 100px; padding: 6px 8px; font-size: 13px; text-align: right; border-color: var(--color-border); }
+.pay-table .wage-input.pay-nowage { background: #fffbeb; }
+.pay-amount { font-weight: 700; }
+.pay-flag { display: inline-block; padding: 1px 6px; border-radius: 6px; background: #fee2e2; color: #b91c1c; font-size: 11px; font-weight: 700; }

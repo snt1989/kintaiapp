@@ -4,6 +4,7 @@ const db = require('../db');
 const { requireAuth, requireAdmin } = require('../auth');
 const { combineName } = require('../nameUtil');
 const sheetsSync = require('../sheetsSync');
+const payroll = require('../payroll');
 const {
   generateEmployeeCode,
   getMaxEmployeeCodeNumber,
@@ -658,6 +659,105 @@ router.get('/logs/csv', async (req, res, next) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="attendance_logs.csv"');
     res.send(csv);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---- 給与計算 ----
+
+const RATE_KEYS = { overtime: 'payroll_rate_overtime', night: 'payroll_rate_night', holiday: 'payroll_rate_holiday' };
+
+async function loadRates() {
+  const rates = { ...payroll.DEFAULT_RATES };
+  for (const [name, key] of Object.entries(RATE_KEYS)) {
+    const v = await db.getSetting(key);
+    if (v !== null && v !== undefined && v !== '' && !Number.isNaN(Number(v))) rates[name] = Number(v);
+  }
+  return rates;
+}
+
+// 月ごとの給与集計(対象月は "YYYY-MM"。省略時は今月)
+router.get('/payroll', async (req, res, next) => {
+  try {
+    const month = req.query.month || new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 7);
+    const range = payroll.monthRangeIso(month);
+    if (!range) return res.status(400).json({ error: '対象月の形式が正しくありません(例: 2026-09)。' });
+
+    const rates = await loadRates();
+    const employees = await db.all(
+      'SELECT id, employee_code, name, role, active, division, hourly_wage FROM employees ORDER BY employee_code'
+    );
+    // 日をまたぐ勤務を正しく集計するため、前後1日ぶん多めに取得する
+    const from = new Date(new Date(range.startIso).getTime() - 24 * 3600 * 1000).toISOString();
+    const to = new Date(new Date(range.endIso).getTime() + 24 * 3600 * 1000).toISOString();
+    const logs = await db.all(
+      'SELECT employee_id, type, timestamp FROM attendance_logs WHERE timestamp >= ? AND timestamp < ?',
+      [from, to]
+    );
+    const byEmployee = new Map();
+    for (const l of logs) {
+      if (!byEmployee.has(l.employee_id)) byEmployee.set(l.employee_id, []);
+      byEmployee.get(l.employee_id).push(l);
+    }
+
+    const rows = employees
+      .map((e) => ({
+        id: e.id,
+        employee_code: e.employee_code,
+        name: e.name,
+        division: e.division,
+        active: e.active,
+        hourly_wage: e.hourly_wage,
+        ...payroll.calculateEmployee(byEmployee.get(e.id) || [], e.hourly_wage, rates, month),
+      }))
+      // 無効な社員は、その月に勤務がある場合だけ表示する
+      .filter((r) => r.active || r.total_minutes > 0);
+
+    res.json({ month, rates, rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 時給の保存(複数人まとめて)。空欄・null は未設定に戻す
+router.put('/payroll/wages', async (req, res, next) => {
+  try {
+    const { wages } = req.body || {};
+    if (!Array.isArray(wages) || wages.length === 0) {
+      return res.status(400).json({ error: '保存する時給がありません。' });
+    }
+    for (const w of wages) {
+      const raw = w.hourly_wage;
+      if (raw !== null && raw !== '' && raw !== undefined && (!/^\d{1,6}$/.test(String(raw)))) {
+        return res.status(400).json({ error: '時給は半角数字(円)で入力してください(例: 1500)。' });
+      }
+    }
+    await db.withTransaction(async (tx) => {
+      for (const w of wages) {
+        const value = w.hourly_wage === null || w.hourly_wage === '' || w.hourly_wage === undefined ? null : Number(w.hourly_wage);
+        await tx.run('UPDATE employees SET hourly_wage = ? WHERE id = ?', [value, Number(w.id)]);
+      }
+    });
+    res.json({ updated: wages.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 割増率(%)の保存
+router.put('/payroll/rates', async (req, res, next) => {
+  try {
+    const rates = {};
+    for (const name of Object.keys(RATE_KEYS)) {
+      const v = Number((req.body || {})[name]);
+      if (!Number.isFinite(v) || v < 0 || v > 200) {
+        return res.status(400).json({ error: '割増率は0〜200の数字(%)で入力してください。' });
+      }
+      rates[name] = v;
+    }
+    for (const [name, key] of Object.entries(RATE_KEYS)) await db.setSetting(key, String(rates[name]));
+    res.json({ rates });
   } catch (err) {
     next(err);
   }
