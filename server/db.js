@@ -184,6 +184,16 @@ function ensureSchema() {
           PRIMARY KEY (employee_id, month)
         );
       `);
+      // 給与明細の修正値(勤怠・支給の項目の上書きと手当)。社員・月ごとにJSON文字列で保持する。
+      await query(`
+        CREATE TABLE IF NOT EXISTS payroll_adjustments (
+          employee_id INTEGER NOT NULL REFERENCES employees(id),
+          month TEXT NOT NULL,
+          data TEXT NOT NULL DEFAULT '{}',
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          PRIMARY KEY (employee_id, month)
+        );
+      `);
       // 給与計算用の時給(円)。未設定(NULL)の社員は支給額が0円として扱われる。
       await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS hourly_wage INTEGER;`);
       await query(`ALTER TABLE divisions ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;`);

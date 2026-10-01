@@ -437,6 +437,7 @@ router.delete('/employees', async (req, res, next) => {
     await db.withTransaction(async (tx) => {
       for (const id of deletableIds) {
         await tx.run('DELETE FROM payroll_deductions WHERE employee_id = ?', [id]);
+        await tx.run('DELETE FROM payroll_adjustments WHERE employee_id = ?', [id]);
         await tx.run('DELETE FROM employees WHERE id = ?', [id]);
       }
     });
@@ -678,6 +679,15 @@ async function loadRates() {
   return rates;
 }
 
+function parseAdjustments(row) {
+  try {
+    const d = row && row.data ? JSON.parse(row.data) : {};
+    return { overrides: d.overrides || {}, allowances: d.allowances || {} };
+  } catch (e) {
+    return { overrides: {}, allowances: {} };
+  }
+}
+
 // 月ごとの給与集計(対象月は "YYYY-MM"。省略時は今月)
 router.get('/payroll', async (req, res, next) => {
   try {
@@ -702,6 +712,8 @@ router.get('/payroll', async (req, res, next) => {
       byEmployee.get(l.employee_id).push(l);
     }
 
+    const adjRows = await db.all('SELECT * FROM payroll_adjustments WHERE month = ?', [month]);
+    const adjByEmployee = new Map(adjRows.map((a) => [a.employee_id, parseAdjustments(a)]));
     const dedRows = await db.all('SELECT * FROM payroll_deductions WHERE month = ?', [month]);
     const dedByEmployee = new Map(dedRows.map((d) => [d.employee_id, d]));
 
@@ -713,7 +725,12 @@ router.get('/payroll', async (req, res, next) => {
         division: e.division,
         active: e.active,
         hourly_wage: e.hourly_wage,
-        ...payroll.calculateEmployee(byEmployee.get(e.id) || [], e.hourly_wage, rates, month),
+        ...payroll.finalizeEmployee(
+          payroll.calculateEmployee(byEmployee.get(e.id) || [], e.hourly_wage, rates, month),
+          adjByEmployee.get(e.id),
+          e.hourly_wage,
+          rates
+        ),
       }))
       .map((r) => {
         const deductionsTotal = payroll.sumDeductions(dedByEmployee.get(r.id));
@@ -751,7 +768,10 @@ router.get('/payroll/:id/slip', async (req, res, next) => {
 
     const dedRow = await db.get('SELECT * FROM payroll_deductions WHERE employee_id = ? AND month = ?', [emp.id, month]);
     const deductions = { ...payroll.emptyDeductions(), ...Object.fromEntries(payroll.DEDUCTION_ITEMS.map((i) => [i.key, dedRow ? Number(dedRow[i.key]) || 0 : 0])) };
-    const summary = payroll.calculateEmployee(logs, emp.hourly_wage, rates, month);
+    const computed = payroll.calculateEmployee(logs, emp.hourly_wage, rates, month);
+    const adjRow = await db.get('SELECT * FROM payroll_adjustments WHERE employee_id = ? AND month = ?', [emp.id, month]);
+    const adjustments = parseAdjustments(adjRow);
+    const summary = payroll.finalizeEmployee(computed, adjustments, emp.hourly_wage, rates);
     const deductionsTotal = payroll.sumDeductions(deductions);
 
     res.json({
@@ -760,6 +780,9 @@ router.get('/payroll/:id/slip', async (req, res, next) => {
       employee: { id: emp.id, employee_code: emp.employee_code, name: emp.name, division: emp.division, hourly_wage: emp.hourly_wage },
       rates,
       summary,
+      computed,
+      overrides: adjustments.overrides,
+      allowance_items: payroll.ALLOWANCE_ITEMS,
       deduction_items: payroll.DEDUCTION_ITEMS,
       deductions,
       deductions_total: deductionsTotal,
@@ -771,35 +794,67 @@ router.get('/payroll/:id/slip', async (req, res, next) => {
   }
 });
 
-// 控除額の保存(社員・月ごと)。空欄は0円として保存する
-router.put('/payroll/:id/deductions', async (req, res, next) => {
+// 給与明細の編集(勤怠・支給・控除をまとめて保存)
+//   overrides  … 勤怠・支給の修正値。空欄(null)は自動計算の値を使う
+//   allowances … 手当(空欄は0円)
+//   deductions … 控除(空欄は0円)
+router.put('/payroll/:id/slip', async (req, res, next) => {
   try {
-    const { month, items } = req.body || {};
+    const { month, overrides = {}, allowances = {}, deductions = {} } = req.body || {};
     if (!payroll.monthRangeIso(month)) return res.status(400).json({ error: '対象月の形式が正しくありません(例: 2026-09)。' });
     const emp = await db.get('SELECT id FROM employees WHERE id = ?', [Number(req.params.id)]);
     if (!emp) return res.status(404).json({ error: '社員が見つかりません。' });
 
-    const values = {};
+    const isBlank = (v) => v === null || v === undefined || String(v).trim() === '';
+    const parseInt0 = (v, max, label) => {
+      const text = String(v).trim();
+      if (!/^\d{1,9}$/.test(text) || Number(text) > max) return { error: `${label}は0〜${max.toLocaleString('ja-JP')}の半角数字で入力してください。` };
+      return { value: Number(text) };
+    };
+
+    const LABELS = {
+      work_days: '出勤日数', total_minutes: '総勤務時間', overtime_minutes: '時間外', night_minutes: '深夜', holiday_minutes: '休日',
+      base_pay: '基本給', overtime_pay: '時間外手当', night_pay: '深夜手当', holiday_pay: '休日手当',
+    };
+    const cleanOverrides = {};
+    for (const key of [...payroll.ATTENDANCE_KEYS, ...payroll.PAY_KEYS]) {
+      if (isBlank(overrides[key])) continue;
+      const max = key === 'work_days' ? 31 : key.endsWith('_minutes') ? 44640 : 99999999;
+      const r = parseInt0(overrides[key], max, LABELS[key]);
+      if (r.error) return res.status(400).json({ error: r.error });
+      cleanOverrides[key] = r.value;
+    }
+    const cleanAllowances = {};
+    for (const item of payroll.ALLOWANCE_ITEMS) {
+      const r = isBlank(allowances[item.key]) ? { value: 0 } : parseInt0(allowances[item.key], 9999999, item.label);
+      if (r.error) return res.status(400).json({ error: r.error });
+      cleanAllowances[item.key] = r.value;
+    }
+    const cleanDeductions = {};
     for (const item of payroll.DEDUCTION_ITEMS) {
-      const raw = items ? items[item.key] : '';
-      const text = raw === null || raw === undefined || raw === '' ? '0' : String(raw).trim();
-      if (!/^\d{1,7}$/.test(text)) {
-        return res.status(400).json({ error: `${item.label}は半角数字(円)で入力してください(例: 12000)。` });
-      }
-      values[item.key] = Number(text);
+      const r = isBlank(deductions[item.key]) ? { value: 0 } : parseInt0(deductions[item.key], 9999999, item.label);
+      if (r.error) return res.status(400).json({ error: r.error });
+      cleanDeductions[item.key] = r.value;
     }
 
-    await db.run(
-      `INSERT INTO payroll_deductions (employee_id, month, health_insurance, pension, employment_insurance, income_tax, resident_tax, other)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (employee_id, month) DO UPDATE SET
-         health_insurance = EXCLUDED.health_insurance, pension = EXCLUDED.pension,
-         employment_insurance = EXCLUDED.employment_insurance, income_tax = EXCLUDED.income_tax,
-         resident_tax = EXCLUDED.resident_tax, other = EXCLUDED.other, updated_at = now()`,
-      [emp.id, month, values.health_insurance, values.pension, values.employment_insurance, values.income_tax, values.resident_tax, values.other]
-    );
-    const total = payroll.sumDeductions(values);
-    res.json({ deductions: values, deductions_total: total });
+    await db.withTransaction(async (tx) => {
+      await tx.run(
+        `INSERT INTO payroll_adjustments (employee_id, month, data) VALUES (?, ?, ?)
+         ON CONFLICT (employee_id, month) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
+        [emp.id, month, JSON.stringify({ overrides: cleanOverrides, allowances: cleanAllowances })]
+      );
+      const d = cleanDeductions;
+      await tx.run(
+        `INSERT INTO payroll_deductions (employee_id, month, health_insurance, pension, employment_insurance, income_tax, resident_tax, other)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (employee_id, month) DO UPDATE SET
+           health_insurance = EXCLUDED.health_insurance, pension = EXCLUDED.pension,
+           employment_insurance = EXCLUDED.employment_insurance, income_tax = EXCLUDED.income_tax,
+           resident_tax = EXCLUDED.resident_tax, other = EXCLUDED.other, updated_at = now()`,
+        [emp.id, month, d.health_insurance, d.pension, d.employment_insurance, d.income_tax, d.resident_tax, d.other]
+      );
+    });
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

@@ -113,9 +113,10 @@ function render(data) {
   $('payBody').innerHTML = data.rows.map((r) => {
     const warn = r.incomplete ? ' <span class="pay-flag" title="出勤のみで退勤が打刻されていない勤務は集計に含まれません">退勤漏れ</span>' : '';
     const noWage = !r.hourly_wage ? ' pay-nowage' : '';
+    const adjusted = r.adjusted_keys && r.adjusted_keys.length ? ' <span class="pay-flag pay-flag-adj" title="勤怠・支給を修正しています">修正あり</span>' : '';
     return `<tr>
       <td>${escapeHtml(r.employee_code)}</td>
-      <td>${escapeHtml(r.name)}${r.active ? '' : ' <span class="text-muted">(無効)</span>'}${warn}</td>
+      <td>${escapeHtml(r.name)}${r.active ? '' : ' <span class="text-muted">(無効)</span>'}${warn}${adjusted}</td>
       <td><input type="number" class="wage-input${noWage}" data-id="${r.id}" data-original="${r.hourly_wage == null ? '' : r.hourly_wage}" value="${r.hourly_wage == null ? '' : r.hourly_wage}" min="0" step="10" placeholder="未設定" inputmode="numeric"></td>
       <td class="num">${r.work_days}日</td>
       <td class="num">${hm(r.total_minutes)}</td>
@@ -125,7 +126,7 @@ function render(data) {
       <td class="num pay-amount" title="基本 ${yen(r.base_pay)} + 時間外 ${yen(r.overtime_pay)} + 深夜 ${yen(r.night_pay)} + 休日 ${yen(r.holiday_pay)}">${r.hourly_wage ? yen(r.total_pay) : '<span class="text-muted">時給未設定</span>'}</td>
       <td class="num">${r.hourly_wage || r.deductions_total ? yen(r.deductions_total) : '<span class="text-muted">-</span>'}</td>
       <td class="num pay-amount">${r.hourly_wage || r.deductions_total ? yen(r.net_pay) : '<span class="text-muted">-</span>'}</td>
-      <td><a class="slip-link" href="/payslip.html?id=${r.id}&month=${data.month}" data-slip="${r.id}">明細書</a></td>
+      <td><a class="slip-link" href="/payslip.html?id=${r.id}&month=${data.month}" data-slip="${r.id}">明細書</a> <a class="slip-link slip-edit-link" href="/payslip-edit.html?id=${r.id}&month=${data.month}" data-slip="${r.id}">編集</a></td>
     </tr>`;
   }).join('');
 

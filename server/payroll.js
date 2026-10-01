@@ -103,27 +103,65 @@ function calculateEmployee(logs, hourlyWage, rates = DEFAULT_RATES, monthPrefix 
     if (d.sunday) holiday += d.total;
     else overtime += Math.max(0, d.total - DAILY_LEGAL_MINUTES);
   }
-  const r = { ...DEFAULT_RATES, ...rates };
-  const wage = Number(hourlyWage) > 0 ? Number(hourlyWage) : 0;
-  const basePay = wage * (total / 60);
-  const overtimePay = wage * (overtime / 60) * (r.overtime / 100);
-  const nightPay = wage * (night / 60) * (r.night / 100);
-  const holidayPay = wage * (holiday / 60) * (r.holiday / 100);
-  const round = (n) => Math.floor(n + 1e-9);
-  return {
-    work_days: days.filter((d) => d.total > 0).length,
+  const minutes = {
     total_minutes: Math.round(total),
     overtime_minutes: Math.round(overtime),
     night_minutes: Math.round(night),
     holiday_minutes: Math.round(holiday),
+  };
+  const pay = payFromMinutes(minutes, hourlyWage, rates);
+  return {
+    work_days: days.filter((d) => d.total > 0).length,
+    ...minutes,
     incomplete,
-    base_pay: round(basePay),
-    overtime_pay: round(overtimePay),
-    night_pay: round(nightPay),
-    holiday_pay: round(holidayPay),
-    total_pay: round(basePay + overtimePay + nightPay + holidayPay),
+    ...pay,
+    total_pay: pay.base_pay + pay.overtime_pay + pay.night_pay + pay.holiday_pay,
   };
 }
+
+// 勤務時間(分)と時給・割増率から、各支給額(円・切り捨て)を求める
+function payFromMinutes(m, hourlyWage, rates = DEFAULT_RATES) {
+  const r = { ...DEFAULT_RATES, ...rates };
+  const wage = Number(hourlyWage) > 0 ? Number(hourlyWage) : 0;
+  const round = (n) => Math.floor(n + 1e-9);
+  return {
+    base_pay: round(wage * (m.total_minutes / 60)),
+    overtime_pay: round(wage * (m.overtime_minutes / 60) * (r.overtime / 100)),
+    night_pay: round(wage * (m.night_minutes / 60) * (r.night / 100)),
+    holiday_pay: round(wage * (m.holiday_minutes / 60) * (r.holiday / 100)),
+  };
+}
+
+// 手当(管理者が入力する支給項目)
+const ALLOWANCE_ITEMS = [
+  { key: 'commute_allowance', label: '通勤手当' },
+  { key: 'other_allowance', label: 'その他手当' },
+];
+// 修正できる勤怠・支給の項目(空欄は自動計算の値を使う)
+const ATTENDANCE_KEYS = ['work_days', 'total_minutes', 'overtime_minutes', 'night_minutes', 'holiday_minutes'];
+const PAY_KEYS = ['base_pay', 'overtime_pay', 'night_pay', 'holiday_pay'];
+
+// 自動計算の結果に、管理者の修正(adjustments)を反映した最終値を返す
+//   adjustments = { overrides: { 項目: 数値 }, allowances: { 項目: 数値 } }
+// 勤務時間を修正した場合は、修正後の時間で支給額を再計算する。支給額そのものを修正した場合はその金額を優先する。
+function finalizeEmployee(calc, adjustments, hourlyWage, rates = DEFAULT_RATES) {
+  const overrides = (adjustments && adjustments.overrides) || {};
+  const allowances = { commute_allowance: 0, other_allowance: 0, ...((adjustments && adjustments.allowances) || {}) };
+  const has = (k) => overrides[k] !== undefined && overrides[k] !== null;
+  const eff = { ...calc };
+  for (const k of ATTENDANCE_KEYS) if (has(k)) eff[k] = Number(overrides[k]);
+  if (['total_minutes', 'overtime_minutes', 'night_minutes', 'holiday_minutes'].some(has)) {
+    Object.assign(eff, payFromMinutes(eff, hourlyWage, rates));
+  }
+  for (const k of PAY_KEYS) if (has(k)) eff[k] = Number(overrides[k]);
+  const allowancesTotal = ALLOWANCE_ITEMS.reduce((sum, i) => sum + (Number(allowances[i.key]) || 0), 0);
+  eff.allowances = allowances;
+  eff.allowances_total = allowancesTotal;
+  eff.total_pay = eff.base_pay + eff.overtime_pay + eff.night_pay + eff.holiday_pay + allowancesTotal;
+  eff.adjusted_keys = [...ATTENDANCE_KEYS, ...PAY_KEYS].filter(has);
+  return eff;
+}
+
 
 // 対象月("YYYY-MM")の開始・終了(UTCのISO文字列)
 function monthRangeIso(month) {
@@ -173,4 +211,4 @@ function sumDeductions(d) {
   return DEDUCTION_ITEMS.reduce((sum, i) => sum + (Number(d && d[i.key]) || 0), 0);
 }
 
-module.exports = { DEDUCTION_ITEMS, emptyDeductions, sumDeductions, calculateEmployee, summarizeDays, dailyBreakdown, monthRangeIso, DEFAULT_RATES };
+module.exports = { ALLOWANCE_ITEMS, ATTENDANCE_KEYS, PAY_KEYS, payFromMinutes, finalizeEmployee, DEDUCTION_ITEMS, emptyDeductions, sumDeductions, calculateEmployee, summarizeDays, dailyBreakdown, monthRangeIso, DEFAULT_RATES };

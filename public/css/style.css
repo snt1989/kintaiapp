@@ -743,3 +743,28 @@ th { color: var(--color-text-muted); font-weight: 600; background: #fafafa; }
 .slip-net-main strong { font-size: 24px; }
 .slip-negative { color: var(--color-danger); }
 @media print { .slip-net { background: none; border: 1px solid #000; } .ded-input { border: none; } }
+
+/* ---- 給与明細の編集 ---- */
+.slip-actions-right { display: inline-flex; gap: 8px; }
+.edit-head { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.edit-head .btn { margin-top: 0; text-decoration: none; }
+.edit-person { font-size: 18px; font-weight: 800; }
+.edit-help { font-size: 12px; margin: 0 0 14px; }
+.edit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 16px; align-items: start; }
+.edit-table { width: 100%; border-collapse: collapse; }
+.edit-table + .edit-table { margin-top: 14px; }
+.edit-table th, .edit-table td { padding: 7px 4px; border-bottom: 1px solid var(--color-border); font-size: 13px; background: none; text-align: left; }
+.edit-table thead th { font-size: 11px; color: var(--color-text-muted); font-weight: 600; }
+.edit-table tbody th { font-weight: 500; color: var(--color-text-muted); }
+.edit-table tbody th label { margin: 0; font-size: 13px; font-weight: 500; color: var(--color-text-muted); }
+.edit-table td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.edit-table td:last-child { text-align: right; white-space: nowrap; }
+.edit-input { width: 96px; padding: 6px 8px; font-size: 13px; text-align: right; border-color: var(--color-border); font-variant-numeric: tabular-nums; }
+.edit-input.is-set { background: #fffbeb; }
+.unit { font-size: 12px; margin-left: 3px; color: var(--color-text-muted); }
+.edit-net { margin-top: 4px; }
+.edit-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; margin-top: 14px; }
+.edit-actions .btn { margin-top: 0; width: auto; padding-inline: 22px; }
+.pay-flag-adj { background: #fef3c7; color: #92400e; }
+.slip-edit-link { margin-left: 6px; font-weight: 500; }
+.edit-table thead th:nth-child(n+2) { text-align: right; }

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>給与明細の編集 | 三桜 勤怠管理システム</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="app wide">
+  <header class="topbar">
+    <h1>給与明細の編集</h1>
+    <div class="user-info">
+      <span id="userName"></span>
+      <button class="logout-btn" id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <nav class="admin-subnav">
+    <a href="/admin.html">勤怠ログ</a>
+    <a href="/employees.html">社員管理</a>
+    <a href="/master.html">マスタ管理</a>
+    <a href="/payroll.html" class="active">給与計算</a>
+  </nav>
+
+  <main>
+    <div id="editError"></div>
+    <div id="editBody" hidden>
+      <div class="edit-head">
+        <div>
+          <div class="edit-person" id="ePerson"></div>
+          <div class="text-muted" id="eMeta"></div>
+        </div>
+        <a class="btn secondary small" id="cancelLink" href="/payslip.html">← 明細書に戻る</a>
+      </div>
+
+      <p class="text-muted edit-help">
+        「修正値」を空欄にすると自動計算の値を使います。勤務時間を修正すると、支給額は修正後の時間から再計算されます。支給額そのものを修正すると、その金額が優先されます。
+      </p>
+
+      <div class="edit-grid">
+        <section class="card">
+          <div class="section-title">勤怠</div>
+          <table class="edit-table">
+            <thead><tr><th>項目</th><th>自動計算</th><th>修正値</th></tr></thead>
+            <tbody id="attBody"></tbody>
+          </table>
+        </section>
+
+        <section class="card">
+          <div class="section-title">支給</div>
+          <table class="edit-table">
+            <thead><tr><th>項目</th><th>計算値</th><th>修正値</th></tr></thead>
+            <tbody id="payBody"></tbody>
+          </table>
+          <table class="edit-table edit-table-plain">
+            <thead><tr><th>手当</th><th></th><th>金額</th></tr></thead>
+            <tbody id="allowBody"></tbody>
+          </table>
+        </section>
+
+        <section class="card">
+          <div class="section-title">控除</div>
+          <table class="edit-table edit-table-plain">
+            <thead><tr><th>項目</th><th></th><th>金額</th></tr></thead>
+            <tbody id="dedBody"></tbody>
+          </table>
+        </section>
+      </div>
+
+      <div class="slip-net edit-net">
+        <div><span>支給額合計</span><strong id="nGross"></strong></div>
+        <div class="slip-minus">−</div>
+        <div><span>控除合計</span><strong id="nDeduct"></strong></div>
+        <div class="slip-minus">＝</div>
+        <div class="slip-net-main"><span>差引支給額</span><strong id="nNet"></strong></div>
+      </div>
+
+      <div id="saveMsg"></div>
+      <div class="edit-actions">
+        <button class="btn secondary small" id="resetBtn" type="button">勤怠・支給の修正をすべて自動計算に戻す</button>
+        <button class="btn" id="saveBtn" type="button">保存して明細書を表示</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+Api.requireAdmin();
+const employee = Api.getEmployee();
+document.getElementById('userName').textContent = `${employee.name} (管理者)`;
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  Api.clearSession();
+  location.href = '/index.html';
+});
+
+const $ = (id) => document.getElementById(id);
+const yen = (n) => `${Number(n).toLocaleString('ja-JP')}円`;
+const hm = (min) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, '0')}`;
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const ATT_FIELDS = [
+  { key: 'work_days', label: '出勤日数', kind: 'days' },
+  { key: 'total_minutes', label: '総勤務時間', kind: 'time' },
+  { key: 'overtime_minutes', label: '時間外(1日8時間超)', kind: 'time' },
+  { key: 'night_minutes', label: '深夜(22時〜5時)', kind: 'time' },
+  { key: 'holiday_minutes', label: '休日(日曜)', kind: 'time' },
+];
+const PAY_FIELDS = [
+  { key: 'base_pay', label: '基本給' },
+  { key: 'overtime_pay', label: '時間外手当' },
+  { key: 'night_pay', label: '深夜手当' },
+  { key: 'holiday_pay', label: '休日手当' },
+];
+
+let data = null;
+
+function getTarget() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('id') && q.get('month')) return { id: q.get('id'), month: q.get('month') };
+  try { const t = JSON.parse(sessionStorage.getItem('payslip_target') || 'null'); if (t && t.id && t.month) return t; } catch (e) { /* 取得できない場合は案内を表示 */ }
+  return null;
+}
+
+// 入力欄の値 → 保存用の数値(空欄は null)。形式が違う場合は例外
+function readField(input, kind) {
+  const v = input.value.trim();
+  if (v === '') return null;
+  if (kind === 'time') {
+    const m = /^(\d{1,4}):([0-5]\d)$/.exec(v);
+    if (!m) throw new Error('勤務時間は「時:分」の形式で入力してください(例: 8:30)。');
+    return Number(m[1]) * 60 + Number(m[2]);
+  }
+  if (!/^\d{1,9}$/.test(v)) throw new Error('金額・日数は半角数字で入力してください。');
+  return Number(v);
+}
+function safeRead(input, kind) { try { return readField(input, kind); } catch (e) { return undefined; } }
+
+// 画面上の入力から、支給額と差引支給額をその場で計算して表示する(保存時はサーバーの計算が正)
+function recalc() {
+  const wage = Number(data.employee.hourly_wage) > 0 ? Number(data.employee.hourly_wage) : 0;
+  const rates = data.rates;
+  const minutes = {};
+  for (const f of ATT_FIELDS.filter((x) => x.kind === 'time')) {
+    const v = safeRead($(`att_${f.key}`), 'time');
+    minutes[f.key] = v === undefined || v === null ? data.computed[f.key] : v;
+  }
+  const calc = {
+    base_pay: Math.floor(wage * (minutes.total_minutes / 60) + 1e-9),
+    overtime_pay: Math.floor(wage * (minutes.overtime_minutes / 60) * (rates.overtime / 100) + 1e-9),
+    night_pay: Math.floor(wage * (minutes.night_minutes / 60) * (rates.night / 100) + 1e-9),
+    holiday_pay: Math.floor(wage * (minutes.holiday_minutes / 60) * (rates.holiday / 100) + 1e-9),
+  };
+  let gross = 0;
+  for (const f of PAY_FIELDS) {
+    $(`calc_${f.key}`).textContent = yen(calc[f.key]);
+    const v = safeRead($(`pay_${f.key}`), 'yen');
+    gross += v === undefined || v === null ? calc[f.key] : v;
+  }
+  for (const i of data.allowance_items) gross += safeRead($(`allow_${i.key}`), 'yen') || 0;
+  let ded = 0;
+  for (const i of data.deduction_items) ded += safeRead($(`ded_${i.key}`), 'yen') || 0;
+  document.querySelectorAll('[id^=att_], [id^=pay_]').forEach((i) => i.classList.toggle('is-set', i.value.trim() !== ''));
+  $('nGross').textContent = yen(gross);
+  $('nDeduct').textContent = yen(ded);
+  $('nNet').textContent = yen(gross - ded);
+  $('nNet').classList.toggle('slip-negative', gross - ded < 0);
+}
+
+function render(d) {
+  data = d;
+  const [y, m] = d.month.split('-');
+  $('ePerson').textContent = `${d.employee.name}(${d.employee.employee_code})`;
+  $('eMeta').textContent = `${y}年${Number(m)}月分 ・ 時給 ${d.employee.hourly_wage ? yen(d.employee.hourly_wage) : '未設定'}`;
+
+  $('attBody').innerHTML = ATT_FIELDS.map((f) => {
+    const auto = f.kind === 'days' ? `${d.computed[f.key]}日` : `${hm(d.computed[f.key])}`;
+    const cur = d.overrides[f.key];
+    const val = cur === undefined ? '' : (f.kind === 'days' ? cur : hm(cur));
+    return `<tr><th><label for="att_${f.key}">${esc(f.label)}</label></th><td class="num">${auto}</td><td><input type="text" inputmode="${f.kind === 'time' ? 'text' : 'numeric'}" class="edit-input" id="att_${f.key}" value="${val}" placeholder="${f.kind === 'time' ? '例 8:30' : ''}" autocomplete="off"></td></tr>`;
+  }).join('');
+
+  $('payBody').innerHTML = PAY_FIELDS.map((f) => {
+    const cur = d.overrides[f.key];
+    return `<tr><th><label for="pay_${f.key}">${esc(f.label)}</label></th><td class="num" id="calc_${f.key}"></td><td><input type="text" inputmode="numeric" class="edit-input" id="pay_${f.key}" value="${cur === undefined ? '' : cur}" autocomplete="off"><span class="unit">円</span></td></tr>`;
+  }).join('');
+
+  $('allowBody').innerHTML = d.allowance_items.map((i) =>
+    `<tr><th><label for="allow_${i.key}">${esc(i.label)}</label></th><td></td><td><input type="text" inputmode="numeric" class="edit-input" id="allow_${i.key}" value="${d.summary.allowances[i.key] || 0}" autocomplete="off"><span class="unit">円</span></td></tr>`).join('');
+
+  $('dedBody').innerHTML = d.deduction_items.map((i) =>
+    `<tr><th><label for="ded_${i.key}">${esc(i.label)}</label></th><td></td><td><input type="text" inputmode="numeric" class="edit-input" id="ded_${i.key}" value="${d.deductions[i.key] || 0}" autocomplete="off"><span class="unit">円</span></td></tr>`).join('');
+
+  document.querySelectorAll('.edit-input').forEach((i) => i.addEventListener('input', recalc));
+  recalc();
+  $('editBody').hidden = false;
+}
+
+(async () => {
+  const target = getTarget();
+  if (!target) {
+    $('editError').innerHTML = '<div class="error-msg">対象の社員が選ばれていません。「給与計算」の一覧から「編集」を開いてください。</div>';
+    return;
+  }
+  $('cancelLink').href = `/payslip.html?id=${encodeURIComponent(target.id)}&month=${encodeURIComponent(target.month)}`;
+  try {
+    render(await Api.request(`/admin/payroll/${encodeURIComponent(target.id)}/slip?month=${encodeURIComponent(target.month)}`));
+  } catch (err) {
+    $('editError').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+  }
+})();
+
+$('resetBtn').addEventListener('click', () => {
+  [...ATT_FIELDS.map((f) => `att_${f.key}`), ...PAY_FIELDS.map((f) => `pay_${f.key}`)].forEach((id) => { $(id).value = ''; });
+  recalc();
+});
+
+$('saveBtn').addEventListener('click', async () => {
+  const target = getTarget();
+  $('saveMsg').innerHTML = '';
+  let body;
+  try {
+    const overrides = {};
+    for (const f of ATT_FIELDS) overrides[f.key] = readField($(`att_${f.key}`), f.kind);
+    for (const f of PAY_FIELDS) overrides[f.key] = readField($(`pay_${f.key}`), 'yen');
+    const allowances = {}; for (const i of data.allowance_items) allowances[i.key] = readField($(`allow_${i.key}`), 'yen');
+    const deductions = {}; for (const i of data.deduction_items) deductions[i.key] = readField($(`ded_${i.key}`), 'yen');
+    body = { month: target.month, overrides, allowances, deductions };
+  } catch (err) {
+    $('saveMsg').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+    return;
+  }
+  $('saveBtn').disabled = true;
+  try {
+    await Api.request(`/admin/payroll/${encodeURIComponent(target.id)}/slip`, { method: 'PUT', body });
+    location.href = `/payslip.html?id=${encodeURIComponent(target.id)}&month=${encodeURIComponent(target.month)}`;
+  } catch (err) {
+    $('saveMsg').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+    $('saveBtn').disabled = false;
+  }
+});
+</script>
+</body>
+</html>
