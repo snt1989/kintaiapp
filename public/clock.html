@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<title>打刻 | 勤怠管理システム</title>
+<title>打刻入力 | 勤怠管理システム</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;800&family=Zen+Kaku+Gothic+New:wght@700;800&display=swap">
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
 <div class="app">
   <header class="topbar">
-    <h1>勤怠打刻</h1>
+    <h1>打刻入力</h1>
     <div class="user-info">
       <span id="userName"></span>
       <button class="logout-btn" id="logoutBtn">ログアウト</button>
@@ -49,7 +49,7 @@
 
       <div class="site-field">
         <label for="remarks">備考(任意)</label>
-        <input type="text" id="remarks" placeholder="例: 電車遅延のため出勤が遅れました" autocomplete="off">
+        <input type="text" id="remarks" autocomplete="off">
       </div>
 
       <div class="punch-grid">
@@ -70,8 +70,13 @@
       <div id="resultMsg"></div>
     </div>
   </main>
+  <nav class="tabbar">
+    <a href="/manual.html"><span class="tab-icon">✍️</span>直接入力</a>
+    <a href="/clock.html" class="active"><span class="tab-icon">⏱️</span>打刻入力</a>
+  </nav>
 </div>
 
+<script src="/js/demo-mock.js"></script>
 <script src="/js/api.js"></script>
 <script>
 Api.requireLogin();
@@ -224,7 +229,7 @@ function applyStatus(status) {
 }
 
 // 打刻ボタンの有効/無効判定と本日の勤務時間計算のために、本日の打刻状況のみを取得する
-// (打刻の一覧表示はこの画面からは削除。確認したい場合は「履歴」ページを参照)
+// (打刻の一覧表示はこの画面には表示しない)
 async function loadTodayStatus() {
   try {
     const data = await Api.request('/attendance/today-status');

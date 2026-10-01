@@ -167,7 +167,57 @@ function ensureSchema() {
       await query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS remarks TEXT;`);
       // 打刻時点の現場が属する事業部(必須項目)。社員マスタ上の所属事業部とは別に、打刻ごとに記録する。
       await query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS site_division TEXT;`);
+      // 入力方法: 'clock' = 打刻入力(ボタンで打刻) / 'manual' = 直接入力(時間を入力して登録)。既存データは打刻入力として扱う。
+      await query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS input_method TEXT NOT NULL DEFAULT 'clock';`);
+      // 給与明細の控除欄(社員・月ごとに管理者が入力した金額)
+      await query(`
+        CREATE TABLE IF NOT EXISTS payroll_deductions (
+          employee_id INTEGER NOT NULL REFERENCES employees(id),
+          month TEXT NOT NULL,
+          health_insurance INTEGER NOT NULL DEFAULT 0,
+          pension INTEGER NOT NULL DEFAULT 0,
+          employment_insurance INTEGER NOT NULL DEFAULT 0,
+          income_tax INTEGER NOT NULL DEFAULT 0,
+          resident_tax INTEGER NOT NULL DEFAULT 0,
+          other INTEGER NOT NULL DEFAULT 0,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          PRIMARY KEY (employee_id, month)
+        );
+      `);
+      // 給与明細の修正値(勤怠・支給の項目の上書きと手当)。社員・月ごとにJSON文字列で保持する。
+      await query(`
+        CREATE TABLE IF NOT EXISTS payroll_adjustments (
+          employee_id INTEGER NOT NULL REFERENCES employees(id),
+          month TEXT NOT NULL,
+          data TEXT NOT NULL DEFAULT '{}',
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          PRIMARY KEY (employee_id, month)
+        );
+      `);
+      // 給与計算用の時給(円)。未設定(NULL)の社員は支給額が0円として扱われる。
+      await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS hourly_wage INTEGER;`);
       await query(`ALTER TABLE divisions ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;`);
+      // 所得税の自動計算に使う項目: 税区分('kou'=甲欄 / 'otsu'=乙欄)と、扶養親族等の数(控除対象配偶者を含む)
+      await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS tax_table TEXT NOT NULL DEFAULT 'kou';`);
+      await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS dependents INTEGER NOT NULL DEFAULT 0;`);
+      // 保険の加入状況(1=加入 / 0=未加入): 社会保険=健康保険・厚生年金保険、労働保険=雇用保険(労災保険は全員が対象のため管理しない)
+      await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS social_insurance INTEGER NOT NULL DEFAULT 0;`);
+      await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS labor_insurance INTEGER NOT NULL DEFAULT 0;`);
+      // 所得税を手入力した月は 1、自動計算する月は 0。この列を追加する前に入力済みだった所得税は、手入力として残す。
+      // 複数のサーバーレス関数が同時に起動しても1回だけ実行されるよう、ロックを取ったうえで列の有無を確認する
+      await query(`
+        DO $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(7311002);
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = 'payroll_deductions' AND column_name = 'income_tax_manual'
+          ) THEN
+            ALTER TABLE payroll_deductions ADD COLUMN income_tax_manual INTEGER NOT NULL DEFAULT 0;
+            UPDATE payroll_deductions SET income_tax_manual = 1 WHERE income_tax <> 0;
+          END IF;
+        END $$;
+      `);
 
       // 氏名を姓・名に分けて保持する(nameは "姓 名" を自動的に結合した表示・検索用の列として維持する)
       await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS last_name TEXT;`);

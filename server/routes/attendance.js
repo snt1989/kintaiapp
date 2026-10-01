@@ -15,6 +15,9 @@ const TYPE_LABELS = {
 
 const VALID_TYPES = Object.keys(TYPE_LABELS);
 
+// 入力方法(どちらの画面で入力されたか)
+const INPUT_METHOD_LABELS = { clock: '打刻入力', manual: '直接入力' };
+
 // 直近の打刻種別から、現在「勤務中」か「休憩中」かを判定する
 // (出勤〜退勤、休憩開始〜休憩終了が必ず対になっている前提。対応関係はサーバー側でも検証する)
 function deriveStatus(lastType) {
@@ -91,8 +94,8 @@ router.post('/clock', requireAuth, async (req, res, next) => {
 
     const timestamp = new Date().toISOString();
     const log = await db.get(
-      'INSERT INTO attendance_logs (employee_id, type, timestamp, note, remarks, site_division) VALUES (?, ?, ?, ?, ?, ?) RETURNING *',
-      [req.user.id, type, timestamp, siteName, remarksText, siteDivisionValue]
+      'INSERT INTO attendance_logs (employee_id, type, timestamp, note, remarks, site_division, input_method) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *',
+      [req.user.id, type, timestamp, siteName, remarksText, siteDivisionValue, 'clock']
     );
 
     // バックアップ用: 設定されていればリアルタイムでスプレッドシートにも同期する
@@ -106,6 +109,7 @@ router.post('/clock', requireAuth, async (req, res, next) => {
         site_division: siteDivisionValue,
         site_name: siteName,
         remarks: remarksText,
+        input_method_label: INPUT_METHOD_LABELS.clock,
         timestamp: log.timestamp,
         timestamp_jst: new Date(log.timestamp).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }),
       });
@@ -113,6 +117,103 @@ router.post('/clock', requireAuth, async (req, res, next) => {
 
     const newStatus = deriveStatus(type);
     res.json({ ok: true, log: { ...log, label: TYPE_LABELS[log.type] }, status: newStatus });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 時間の直接入力(1日分をまとめて登録): 打刻し忘れなどの後追い入力用
+// 出勤・退勤は必須、休憩開始・休憩終了は両方入力するか両方空欄にする。
+// 同じ日に既に打刻がある場合は二重登録を防ぐため登録できない(修正は管理者が行う)。
+router.post('/manual', requireAuth, async (req, res, next) => {
+  try {
+    const { date, clock_in, clock_out, break_start, break_end, note, remarks, site_division } = req.body || {};
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) {
+      return res.status(400).json({ error: '日付を入力してください。' });
+    }
+    const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (!timeRe.test(clock_in || '') || !timeRe.test(clock_out || '')) {
+      return res.status(400).json({ error: '出勤時刻と退勤時刻を入力してください。' });
+    }
+    const hasBreakStart = !!break_start;
+    const hasBreakEnd = !!break_end;
+    if (hasBreakStart !== hasBreakEnd) {
+      return res.status(400).json({ error: '休憩は開始・終了の両方を入力するか、両方とも空欄にしてください。' });
+    }
+    if (hasBreakStart && (!timeRe.test(break_start) || !timeRe.test(break_end))) {
+      return res.status(400).json({ error: '休憩時刻の形式が正しくありません。' });
+    }
+
+    const toDate = (t) => new Date(`${date}T${t}:00+09:00`);
+    const entries = [{ type: 'clock_in', at: toDate(clock_in) }];
+    if (hasBreakStart) {
+      entries.push({ type: 'break_start', at: toDate(break_start) }, { type: 'break_end', at: toDate(break_end) });
+    }
+    entries.push({ type: 'clock_out', at: toDate(clock_out) });
+
+    if (entries.some((e) => Number.isNaN(e.at.getTime()))) {
+      return res.status(400).json({ error: '日付または時刻の形式が正しくありません。' });
+    }
+    for (let i = 1; i < entries.length; i += 1) {
+      if (entries[i].at.getTime() <= entries[i - 1].at.getTime()) {
+        return res.status(400).json({ error: '時刻は「出勤 → 休憩開始 → 休憩終了 → 退勤」の順に、後の時刻になるよう入力してください。' });
+      }
+    }
+    if (entries[entries.length - 1].at.getTime() > Date.now()) {
+      return res.status(400).json({ error: '未来の時刻は入力できません。' });
+    }
+
+    const siteDivisionValue = site_division && String(site_division).trim() ? String(site_division).trim() : null;
+    if (!siteDivisionValue) {
+      return res.status(400).json({ error: '現場の該当事業部を選択してください。' });
+    }
+    if (!(await db.get('SELECT id FROM divisions WHERE name = ?', [siteDivisionValue]))) {
+      return res.status(400).json({ error: '指定された事業部はマスタに登録されていません。' });
+    }
+
+    const dayStart = new Date(`${date}T00:00:00+09:00`);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const existing = await db.get(
+      'SELECT id FROM attendance_logs WHERE employee_id = ? AND timestamp >= ? AND timestamp < ? LIMIT 1',
+      [req.user.id, dayStart.toISOString(), dayEnd.toISOString()]
+    );
+    if (existing) {
+      return res.status(409).json({ error: 'その日には既に打刻があります。修正が必要な場合は管理者に連絡してください。' });
+    }
+
+    const siteName = note && String(note).trim() ? String(note).trim() : null;
+    const remarksText = remarks && String(remarks).trim() ? String(remarks).trim() : null;
+
+    const created = [];
+    await db.withTransaction(async (tx) => {
+      for (const e of entries) {
+        const log = await tx.get(
+          'INSERT INTO attendance_logs (employee_id, type, timestamp, note, remarks, site_division, input_method) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *',
+          [req.user.id, e.type, e.at.toISOString(), siteName, remarksText, siteDivisionValue, 'manual']
+        );
+        created.push(log);
+      }
+    });
+
+    if (sheetsSync.isConfigured()) {
+      for (const log of created) {
+        await sheetsSync.appendLogToSheet({
+          employee_code: req.user.employee_code,
+          employee_name: req.user.name,
+          type: log.type,
+          type_label: TYPE_LABELS[log.type],
+          site_division: siteDivisionValue,
+          site_name: siteName,
+          remarks: remarksText,
+          input_method_label: INPUT_METHOD_LABELS.manual,
+          timestamp: log.timestamp,
+          timestamp_jst: new Date(log.timestamp).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }),
+        });
+      }
+    }
+
+    res.json({ ok: true, logs: created.map((l) => ({ ...l, label: TYPE_LABELS[l.type] })) });
   } catch (err) {
     next(err);
   }
