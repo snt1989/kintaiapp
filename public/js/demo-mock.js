@@ -975,9 +975,10 @@ function loadPayroll() {
     }
     if (division && !findDivisionByName(division)) return fail(400, '指定された事業部はマスタに登録されていません。');
     if (b.new_password && String(b.new_password).length < 3) return fail(400, 'パスワードは3文字以上にしてください。');
-    var pay = parsePayFields({ tax_table: b.tax_table, dependents: b.dependents }, false);
+    var pay = parsePayFields({ tax_table: b.tax_table, dependents: b.dependents, hourly_wage: b.hourly_wage }, false);
     if (pay.error) return fail(400, pay.error);
     Object.assign(e, { employee_code: code, name: name, last_name: last, first_name: first, role: role, active: active, division: division });
+    if (pay.value.hourly_wage !== undefined) e.hourly_wage = pay.value.hourly_wage;
     if (pay.value.tax_table !== undefined) e.tax_table = pay.value.tax_table;
     if (pay.value.dependents !== undefined) e.dependents = pay.value.dependents;
     if (b.new_password) e.password = String(b.new_password);

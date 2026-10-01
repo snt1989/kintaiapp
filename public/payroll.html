@@ -32,7 +32,7 @@
         </div>
         <button class="btn" id="reloadBtn" type="button">表示</button>
         <button class="btn secondary" id="csvBtn" type="button">CSV出力</button>
-        <a class="btn" id="newEmployeeLink" href="/employee-new.html" style="text-decoration:none;display:inline-block;">社員情報を登録</a>
+        <a class="btn" id="editEmployeeLink" href="/employee-edit.html" style="text-decoration:none;display:inline-block;">社員情報を編集</a>
       </div>
 
       <div class="pay-rates">
@@ -131,7 +131,7 @@ function render(data) {
       <td class="num" title="${r.income_tax_auto ? '自動計算' : '手入力'}">${r.hourly_wage || r.deductions_total ? yen(r.income_tax) : '<span class="text-muted">-</span>'}${r.income_tax_auto || !(r.hourly_wage || r.deductions_total) ? '' : ' <span class="pay-flag" title="明細の編集ページで手入力した金額です">手入力</span>'}</td>
       <td class="num">${r.hourly_wage || r.deductions_total ? yen(r.deductions_total) : '<span class="text-muted">-</span>'}</td>
       <td class="num pay-amount">${r.hourly_wage || r.deductions_total ? yen(r.net_pay) : '<span class="text-muted">-</span>'}</td>
-      <td><a class="slip-link" href="/payslip.html?id=${r.id}&month=${data.month}" data-slip="${r.id}">明細書</a> <a class="slip-link slip-edit-link" href="/payslip-edit.html?id=${r.id}&month=${data.month}" data-slip="${r.id}">編集</a></td>
+      <td><a class="slip-link" href="/payslip.html?id=${r.id}&month=${data.month}" data-slip="${r.id}">明細書</a> <a class="slip-link slip-edit-link" href="/payslip-edit.html?id=${r.id}&month=${data.month}" data-slip="${r.id}">編集</a> <a class="slip-link" href="/employee-edit.html?id=${r.id}">社員情報</a></td>
     </tr>`;
   }).join('');
 

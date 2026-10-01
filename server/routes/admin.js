@@ -531,10 +531,11 @@ router.put('/employees/:id', async (req, res, next) => {
     if (pay.error) return res.status(400).json({ error: pay.error });
     const nextTaxTable = pay.value.tax_table !== undefined ? pay.value.tax_table : employee.tax_table;
     const nextDependents = pay.value.dependents !== undefined ? pay.value.dependents : employee.dependents;
+    const nextWage = pay.value.hourly_wage !== undefined ? pay.value.hourly_wage : employee.hourly_wage;
 
     await db.run(
-      'UPDATE employees SET employee_code = ?, name = ?, last_name = ?, first_name = ?, role = ?, active = ?, division = ?, tax_table = ?, dependents = ? WHERE id = ?',
-      [nextCode, nextName, nextLastName, nextFirstName, nextRole, nextActive, nextDivision, nextTaxTable, nextDependents, id]
+      'UPDATE employees SET employee_code = ?, name = ?, last_name = ?, first_name = ?, role = ?, active = ?, division = ?, hourly_wage = ?, tax_table = ?, dependents = ? WHERE id = ?',
+      [nextCode, nextName, nextLastName, nextFirstName, nextRole, nextActive, nextDivision, nextWage, nextTaxTable, nextDependents, id]
     );
 
     if (new_password) {

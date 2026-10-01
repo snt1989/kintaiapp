@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>社員情報の登録 | 三桜 勤怠管理システム</title>
+<title>社員情報の編集 | 三桜 勤怠管理システム</title>
 <link rel="stylesheet" href="/css/style.css">
 <style>
   .reg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
@@ -19,7 +19,7 @@
 <body>
 <div class="app wide">
   <header class="topbar">
-    <h1>社員情報の登録</h1>
+    <h1>社員情報の編集</h1>
     <div class="user-info">
       <span id="userName"></span>
       <button class="logout-btn" id="logoutBtn">ログアウト</button>
@@ -35,13 +35,17 @@
 
   <main>
     <div class="card">
-      <form id="regForm" novalidate>
+      <label for="empSelect">編集する社員</label>
+      <select id="empSelect"><option value="">読み込み中...</option></select>
+    </div>
+
+    <div class="card" id="editCard" hidden>
+      <form id="editForm" novalidate>
         <div class="reg-section">基本情報</div>
         <div class="reg-grid">
           <div>
             <label for="empCode">社員番号</label>
             <input type="text" id="empCode" autocomplete="off" required>
-            <p class="text-muted reg-hint">次の番号を自動で入れています。変更もできます。</p>
           </div>
           <div>
             <label for="empRole">権限</label>
@@ -65,9 +69,16 @@
             <select id="empDivision"><option value="">未設定</option></select>
           </div>
           <div>
-            <label for="empPassword">初期パスワード</label>
-            <input type="text" id="empPassword" autocomplete="off" required>
-            <p class="text-muted reg-hint">3文字以上。本人に伝えてください。</p>
+            <label for="empActive">状態</label>
+            <select id="empActive">
+              <option value="1">有効</option>
+              <option value="0">無効</option>
+            </select>
+          </div>
+          <div>
+            <label for="empPassword">新しいパスワード</label>
+            <input type="text" id="empPassword" autocomplete="off" placeholder="変更しないときは空欄">
+            <p class="text-muted reg-hint">変更する場合だけ、3文字以上で入力します。</p>
           </div>
         </div>
 
@@ -90,17 +101,16 @@
             <p class="text-muted reg-hint">控除対象配偶者を含めた人数です。</p>
           </div>
         </div>
-        <p class="text-muted reg-hint" id="taxNote">
-          所得税は、給与計算のときに自動で計算します。令和8年分の源泉徴収税額表(月額表・甲欄)の算式を使い、支給額から社会保険料と非課税の通勤手当を除いた金額が基準です。
-        </p>
+        <p class="text-muted reg-hint" id="taxNote"></p>
 
-        <div id="regMsg" style="margin-top:14px;"></div>
+        <div id="editMsg" style="margin-top:14px;"></div>
         <div class="reg-actions">
-          <button class="btn" id="saveBtn" type="submit">登録する</button>
+          <button class="btn" id="saveBtn" type="submit">保存する</button>
           <a class="btn secondary" href="/payroll.html">給与計算に戻る</a>
         </div>
       </form>
     </div>
+    <div id="pageMsg"></div>
   </main>
 </div>
 
@@ -118,20 +128,7 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-async function loadNextCode() {
-  try {
-    const data = await Api.request('/admin/settings/next-employee-code');
-    $('empCode').value = data.computed_next || '';
-  } catch (err) { /* 取得できなければ手入力 */ }
-}
-
-async function loadDivisions() {
-  try {
-    const data = await Api.request('/admin/divisions');
-    $('empDivision').innerHTML = '<option value="">未設定</option>' +
-      data.divisions.map((d) => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
-  } catch (err) { /* 事業部は未設定のまま登録できる */ }
-}
+let employees = [];
 
 function syncTaxFields() {
   const otsu = $('empTaxTable').value === 'otsu';
@@ -142,43 +139,80 @@ function syncTaxFields() {
 }
 $('empTaxTable').addEventListener('change', syncTaxFields);
 
-$('regForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  $('regMsg').innerHTML = '';
+function fillForm(id) {
+  $('editMsg').innerHTML = '';
+  const e = employees.find((x) => String(x.id) === String(id));
+  $('editCard').hidden = !e;
+  if (!e) return;
+  $('empCode').value = e.employee_code;
+  $('empLastName').value = e.last_name || '';
+  $('empFirstName').value = e.first_name || '';
+  $('empRole').value = e.role;
+  $('empDivision').value = e.division || '';
+  $('empActive').value = e.active ? '1' : '0';
+  $('empPassword').value = '';
+  $('empWage').value = e.hourly_wage == null ? '' : e.hourly_wage;
+  $('empTaxTable').value = e.tax_table === 'otsu' ? 'otsu' : 'kou';
+  $('empDependents').value = e.dependents || 0;
+  syncTaxFields();
+  history.replaceState(null, '', `?id=${encodeURIComponent(e.id)}`);
+}
+
+$('empSelect').addEventListener('change', () => fillForm($('empSelect').value));
+
+$('editForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  $('editMsg').innerHTML = '';
+  const id = $('empSelect').value;
   const body = {
     employee_code: $('empCode').value.trim(),
     last_name: $('empLastName').value.trim(),
     first_name: $('empFirstName').value.trim(),
-    password: $('empPassword').value,
     role: $('empRole').value,
     division: $('empDivision').value,
+    active: $('empActive').value === '1' ? 1 : 0,
     hourly_wage: $('empWage').value.trim(),
     tax_table: $('empTaxTable').value,
     dependents: $('empTaxTable').value === 'otsu' ? '0' : $('empDependents').value.trim(),
   };
-  if (!body.employee_code || !body.last_name || !body.first_name || !body.password) {
-    $('regMsg').innerHTML = '<div class="error-msg">社員番号・姓・名・初期パスワードを入力してください。</div>';
+  if ($('empPassword').value) body.new_password = $('empPassword').value;
+  if (!body.employee_code || !body.last_name || !body.first_name) {
+    $('editMsg').innerHTML = '<div class="error-msg">社員番号・姓・名を入力してください。</div>';
     return;
   }
   $('saveBtn').disabled = true;
   try {
-    const res = await Api.request('/admin/employees', { method: 'POST', body });
-    const emp = res.employee;
-    $('regMsg').innerHTML = `<div class="success-msg">${esc(emp.name)}さん(社員番号 ${esc(emp.employee_code)})を登録しました。続けて登録できます。</div>`;
-    $('regForm').reset();
-    syncTaxFields();
-    await loadNextCode();
-    $('empLastName').focus();
+    const res = await Api.request(`/admin/employees/${encodeURIComponent(id)}`, { method: 'PUT', body });
+    const saved = res.employee;
+    const i = employees.findIndex((x) => String(x.id) === String(id));
+    if (i !== -1) employees[i] = saved;
+    $('empSelect').options[$('empSelect').selectedIndex].textContent = `${saved.employee_code} ${saved.name}${saved.active ? '' : '(無効)'}`;
+    $('empPassword').value = '';
+    $('editMsg').innerHTML = `<div class="success-msg">${esc(saved.name)}さんの社員情報を保存しました。</div>`;
   } catch (err) {
-    $('regMsg').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+    $('editMsg').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
   } finally {
     $('saveBtn').disabled = false;
   }
 });
 
-syncTaxFields();
-loadNextCode();
-loadDivisions();
+(async () => {
+  try {
+    const [emps, divs] = await Promise.all([Api.request('/admin/employees'), Api.request('/admin/divisions')]);
+    employees = emps.employees;
+    $('empDivision').innerHTML = '<option value="">未設定</option>' +
+      divs.divisions.map((d) => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
+    $('empSelect').innerHTML = '<option value="">選んでください</option>' +
+      employees.map((e) => `<option value="${e.id}">${esc(e.employee_code)} ${esc(e.name)}${e.active ? '' : '(無効)'}</option>`).join('');
+    const wanted = new URLSearchParams(location.search).get('id');
+    if (wanted && employees.some((e) => String(e.id) === wanted)) {
+      $('empSelect').value = wanted;
+      fillForm(wanted);
+    }
+  } catch (err) {
+    $('pageMsg').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+  }
+})();
 </script>
 </body>
 </html>
