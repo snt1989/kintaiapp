@@ -20,6 +20,8 @@ const TYPE_LABELS = {
   break_end: '休憩終了',
 };
 
+const INPUT_METHOD_LABELS = { clock: '打刻入力', manual: '直接入力' };
+
 // ---- マスタ管理 ----
 
 // 権限マスタ(固定): システムの動作に直結するため、追加・削除はできません
@@ -546,7 +548,13 @@ router.get('/logs', async (req, res, next) => {
   try {
     const { query, params } = buildLogsQuery(req.query);
     const logs = await db.all(query, params);
-    res.json({ logs: logs.map((l) => ({ ...l, label: TYPE_LABELS[l.type] })) });
+    res.json({
+      logs: logs.map((l) => ({
+        ...l,
+        label: TYPE_LABELS[l.type],
+        input_method_label: INPUT_METHOD_LABELS[l.input_method] || INPUT_METHOD_LABELS.clock,
+      })),
+    });
   } catch (err) {
     next(err);
   }
@@ -638,10 +646,10 @@ router.get('/logs/csv', async (req, res, next) => {
     const { query, params } = buildLogsQuery(req.query);
     const logs = await db.all(query, params);
 
-    const header = '社員番号,氏名,種別,事業部,現場名,備考,日時(JST)\n';
+    const header = '社員番号,氏名,種別,事業部,現場名,備考,日時(JST),入力方法\n';
     const rows = logs.map((l) => {
       const jst = new Date(l.timestamp).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
-      return [l.employee_code, l.employee_name, TYPE_LABELS[l.type], l.site_division || '', l.note || '', l.remarks || '', jst]
+      return [l.employee_code, l.employee_name, TYPE_LABELS[l.type], l.site_division || '', l.note || '', l.remarks || '', jst, INPUT_METHOD_LABELS[l.input_method] || INPUT_METHOD_LABELS.clock]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`)
         .join(',');
     });
@@ -684,6 +692,7 @@ router.post('/sheets/sync-all', async (req, res, next) => {
       site_division: l.site_division || '',
       site_name: l.note || '',
       remarks: l.remarks || '',
+      input_method_label: INPUT_METHOD_LABELS[l.input_method] || INPUT_METHOD_LABELS.clock,
       timestamp: l.timestamp,
       timestamp_jst: new Date(l.timestamp).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }),
     }));

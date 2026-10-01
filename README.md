@@ -164,7 +164,7 @@ docker compose exec attendance node server/scripts/createAdmin.js A0001 "管理�
    // Googleスプレッドシート「拡張機能 > Apps Script」に貼り付けて使用します。
    const SECRET = 'ここに好きな合言葉を設定してください(Vercel側のSHEETS_WEBHOOK_SECRETと必ず同じ値にする)';
    const SHEET_NAME = '勤怠ログ';
-   const HEADER = ['社員番号', '氏名', '種別', '事業部', '現場名', '備考', '日時(JST)'];
+   const HEADER = ['社員番号', '氏名', '種別', '事業部', '現場名', '備考', '日時(JST)', '入力方法'];
 
    function doPost(e) {
      const body = JSON.parse(e.postData.contents);
@@ -204,6 +204,7 @@ docker compose exec attendance node server/scripts/createAdmin.js A0001 "管理�
        log.site_name || log.note || '',
        log.remarks || '',
        log.timestamp_jst || log.timestamp || '',
+       log.input_method_label || '',
      ]);
    }
    ```

@@ -647,3 +647,16 @@ th { color: var(--color-text-muted); font-weight: 600; background: #fafafa; }
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+
+/* ログ一覧の入力方法(打刻入力 / 直接入力) */
+.method-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #eef2f7;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.method-tag.manual { background: #fef3c7; color: #92400e; }

@@ -15,6 +15,9 @@ const TYPE_LABELS = {
 
 const VALID_TYPES = Object.keys(TYPE_LABELS);
 
+// 入力方法(どちらの画面で入力されたか)
+const INPUT_METHOD_LABELS = { clock: '打刻入力', manual: '直接入力' };
+
 // 直近の打刻種別から、現在「勤務中」か「休憩中」かを判定する
 // (出勤〜退勤、休憩開始〜休憩終了が必ず対になっている前提。対応関係はサーバー側でも検証する)
 function deriveStatus(lastType) {
@@ -91,8 +94,8 @@ router.post('/clock', requireAuth, async (req, res, next) => {
 
     const timestamp = new Date().toISOString();
     const log = await db.get(
-      'INSERT INTO attendance_logs (employee_id, type, timestamp, note, remarks, site_division) VALUES (?, ?, ?, ?, ?, ?) RETURNING *',
-      [req.user.id, type, timestamp, siteName, remarksText, siteDivisionValue]
+      'INSERT INTO attendance_logs (employee_id, type, timestamp, note, remarks, site_division, input_method) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *',
+      [req.user.id, type, timestamp, siteName, remarksText, siteDivisionValue, 'clock']
     );
 
     // バックアップ用: 設定されていればリアルタイムでスプレッドシートにも同期する
@@ -106,6 +109,7 @@ router.post('/clock', requireAuth, async (req, res, next) => {
         site_division: siteDivisionValue,
         site_name: siteName,
         remarks: remarksText,
+        input_method_label: INPUT_METHOD_LABELS.clock,
         timestamp: log.timestamp,
         timestamp_jst: new Date(log.timestamp).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }),
       });
@@ -185,8 +189,8 @@ router.post('/manual', requireAuth, async (req, res, next) => {
     await db.withTransaction(async (tx) => {
       for (const e of entries) {
         const log = await tx.get(
-          'INSERT INTO attendance_logs (employee_id, type, timestamp, note, remarks, site_division) VALUES (?, ?, ?, ?, ?, ?) RETURNING *',
-          [req.user.id, e.type, e.at.toISOString(), siteName, remarksText, siteDivisionValue]
+          'INSERT INTO attendance_logs (employee_id, type, timestamp, note, remarks, site_division, input_method) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *',
+          [req.user.id, e.type, e.at.toISOString(), siteName, remarksText, siteDivisionValue, 'manual']
         );
         created.push(log);
       }
@@ -202,6 +206,7 @@ router.post('/manual', requireAuth, async (req, res, next) => {
           site_division: siteDivisionValue,
           site_name: siteName,
           remarks: remarksText,
+          input_method_label: INPUT_METHOD_LABELS.manual,
           timestamp: log.timestamp,
           timestamp_jst: new Date(log.timestamp).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }),
         });
