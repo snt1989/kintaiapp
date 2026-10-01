@@ -204,13 +204,20 @@ function ensureSchema() {
       await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS social_insurance INTEGER NOT NULL DEFAULT 0;`);
       await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS labor_insurance INTEGER NOT NULL DEFAULT 0;`);
       // 所得税を手入力した月は 1、自動計算する月は 0。この列を追加する前に入力済みだった所得税は、手入力として残す。
-      const taxModeColumn = await get(
-        "SELECT 1 AS found FROM information_schema.columns WHERE table_name = 'payroll_deductions' AND column_name = 'income_tax_manual'"
-      );
-      if (!taxModeColumn) {
-        await query(`ALTER TABLE payroll_deductions ADD COLUMN income_tax_manual INTEGER NOT NULL DEFAULT 0;`);
-        await query(`UPDATE payroll_deductions SET income_tax_manual = 1 WHERE income_tax <> 0;`);
-      }
+      // 複数のサーバーレス関数が同時に起動しても1回だけ実行されるよう、ロックを取ったうえで列の有無を確認する
+      await query(`
+        DO $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(7311002);
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = 'payroll_deductions' AND column_name = 'income_tax_manual'
+          ) THEN
+            ALTER TABLE payroll_deductions ADD COLUMN income_tax_manual INTEGER NOT NULL DEFAULT 0;
+            UPDATE payroll_deductions SET income_tax_manual = 1 WHERE income_tax <> 0;
+          END IF;
+        END $$;
+      `);
 
       // 氏名を姓・名に分けて保持する(nameは "姓 名" を自動的に結合した表示・検索用の列として維持する)
       await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS last_name TEXT;`);
