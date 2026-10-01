@@ -689,6 +689,12 @@ th { color: var(--color-text-muted); font-weight: 600; background: #fafafa; }
 .pay-table th { white-space: nowrap; }
 .pay-table .wage-input { width: 100px; padding: 6px 8px; font-size: 13px; text-align: right; border-color: var(--color-border); }
 .pay-table .wage-input.pay-nowage { background: #fffbeb; }
+.pay-table .tax-cell { white-space: nowrap; }
+.pay-table .tax-input { padding: 6px 4px; font-size: 13px; border-color: var(--color-border); width: auto; }
+.pay-table .dependents-input { width: 52px; text-align: right; }
+.tax-auto { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 400; white-space: nowrap; }
+.tax-auto input { width: auto; margin: 0; }
+.edit-input:disabled { background: var(--color-bg, #f4f5f7); color: var(--color-text-muted, #6b7280); }
 .pay-amount { font-weight: 700; }
 .pay-flag { display: inline-block; padding: 1px 6px; border-radius: 6px; background: #fee2e2; color: #b91c1c; font-size: 11px; font-weight: 700; }
 

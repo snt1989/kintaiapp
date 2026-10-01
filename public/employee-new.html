@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>社員情報の登録 | 三桜 勤怠管理システム</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  .reg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+  .reg-grid > div { min-width: 0; }
+  .reg-section { font-size: 14px; font-weight: 700; margin: 22px 0 4px; padding-top: 14px; border-top: 1px solid var(--color-border, #e2e5ea); }
+  .reg-section:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+  .reg-hint { font-size: 12px; margin: 4px 0 0; }
+  .reg-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+  .reg-actions .btn { margin-top: 0; width: auto; padding-inline: 22px; text-decoration: none; }
+  @media (max-width: 560px) { .reg-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="app wide">
+  <header class="topbar">
+    <h1>社員情報の登録</h1>
+    <div class="user-info">
+      <span id="userName"></span>
+      <button class="logout-btn" id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <nav class="admin-subnav">
+    <a href="/admin.html">勤怠ログ</a>
+    <a href="/employees.html">社員管理</a>
+    <a href="/master.html">マスタ管理</a>
+    <a href="/payroll.html" class="active">給与計算</a>
+  </nav>
+
+  <main>
+    <div class="card">
+      <form id="regForm" novalidate>
+        <div class="reg-section">基本情報</div>
+        <div class="reg-grid">
+          <div>
+            <label for="empCode">社員番号</label>
+            <input type="text" id="empCode" autocomplete="off" required>
+            <p class="text-muted reg-hint">次の番号を自動で入れています。変更もできます。</p>
+          </div>
+          <div>
+            <label for="empRole">権限</label>
+            <select id="empRole">
+              <option value="employee">一般社員</option>
+              <option value="contractor">委託職員</option>
+              <option value="partner">協力会社</option>
+              <option value="admin">管理者</option>
+            </select>
+          </div>
+          <div>
+            <label for="empLastName">姓</label>
+            <input type="text" id="empLastName" autocomplete="off" required>
+          </div>
+          <div>
+            <label for="empFirstName">名</label>
+            <input type="text" id="empFirstName" autocomplete="off" required>
+          </div>
+          <div>
+            <label for="empDivision">事業部</label>
+            <select id="empDivision"><option value="">未設定</option></select>
+          </div>
+          <div>
+            <label for="empPassword">初期パスワード</label>
+            <input type="text" id="empPassword" autocomplete="off" required>
+            <p class="text-muted reg-hint">3文字以上。本人に伝えてください。</p>
+          </div>
+        </div>
+
+        <div class="reg-section">給与・所得税</div>
+        <div class="reg-grid">
+          <div>
+            <label for="empWage">時給(円)</label>
+            <input type="number" id="empWage" min="0" max="999999" step="10" inputmode="numeric" placeholder="未設定">
+          </div>
+          <div>
+            <label for="empTaxTable">税区分</label>
+            <select id="empTaxTable">
+              <option value="kou">甲欄(扶養控除等申告書を提出)</option>
+              <option value="otsu">乙欄(提出なし・自動計算の対象外)</option>
+            </select>
+          </div>
+          <div>
+            <label for="empDependents">扶養親族等の数(人)</label>
+            <input type="number" id="empDependents" min="0" max="20" step="1" value="0" inputmode="numeric">
+            <p class="text-muted reg-hint">控除対象配偶者を含めた人数です。</p>
+          </div>
+        </div>
+        <p class="text-muted reg-hint" id="taxNote">
+          所得税は、給与計算のときに自動で計算します。令和8年分の源泉徴収税額表(月額表・甲欄)の算式を使い、支給額から社会保険料と非課税の通勤手当を除いた金額が基準です。
+        </p>
+
+        <div id="regMsg" style="margin-top:14px;"></div>
+        <div class="reg-actions">
+          <button class="btn" id="saveBtn" type="submit">登録する</button>
+          <a class="btn secondary" href="/payroll.html">給与計算に戻る</a>
+        </div>
+      </form>
+    </div>
+  </main>
+</div>
+
+<script src="/js/demo-mock.js"></script>
+<script src="/js/api.js"></script>
+<script>
+Api.requireAdmin();
+const employee = Api.getEmployee();
+document.getElementById('userName').textContent = `${employee.name} (管理者)`;
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  Api.clearSession();
+  location.href = '/index.html';
+});
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+async function loadNextCode() {
+  try {
+    const data = await Api.request('/admin/settings/next-employee-code');
+    $('empCode').value = data.computed_next || '';
+  } catch (err) { /* 取得できなければ手入力 */ }
+}
+
+async function loadDivisions() {
+  try {
+    const data = await Api.request('/admin/divisions');
+    $('empDivision').innerHTML = '<option value="">未設定</option>' +
+      data.divisions.map((d) => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
+  } catch (err) { /* 事業部は未設定のまま登録できる */ }
+}
+
+function syncTaxFields() {
+  const otsu = $('empTaxTable').value === 'otsu';
+  $('empDependents').disabled = otsu;
+  $('taxNote').textContent = otsu
+    ? '乙欄は自動計算の対象外です。給与明細の編集ページで所得税の金額を入力してください。'
+    : '所得税は、給与計算のときに自動で計算します。令和8年分の源泉徴収税額表(月額表・甲欄)の算式を使い、支給額から社会保険料と非課税の通勤手当を除いた金額が基準です。';
+}
+$('empTaxTable').addEventListener('change', syncTaxFields);
+
+$('regForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('regMsg').innerHTML = '';
+  const body = {
+    employee_code: $('empCode').value.trim(),
+    last_name: $('empLastName').value.trim(),
+    first_name: $('empFirstName').value.trim(),
+    password: $('empPassword').value,
+    role: $('empRole').value,
+    division: $('empDivision').value,
+    hourly_wage: $('empWage').value.trim(),
+    tax_table: $('empTaxTable').value,
+    dependents: $('empTaxTable').value === 'otsu' ? '0' : $('empDependents').value.trim(),
+  };
+  if (!body.employee_code || !body.last_name || !body.first_name || !body.password) {
+    $('regMsg').innerHTML = '<div class="error-msg">社員番号・姓・名・初期パスワードを入力してください。</div>';
+    return;
+  }
+  $('saveBtn').disabled = true;
+  try {
+    const res = await Api.request('/admin/employees', { method: 'POST', body });
+    const emp = res.employee;
+    $('regMsg').innerHTML = `<div class="success-msg">${esc(emp.name)}さん(社員番号 ${esc(emp.employee_code)})を登録しました。続けて登録できます。</div>`;
+    $('regForm').reset();
+    syncTaxFields();
+    await loadNextCode();
+    $('empLastName').focus();
+  } catch (err) {
+    $('regMsg').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+  } finally {
+    $('saveBtn').disabled = false;
+  }
+});
+
+syncTaxFields();
+loadNextCode();
+loadDivisions();
+</script>
+</body>
+</html>

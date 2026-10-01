@@ -128,7 +128,7 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': 
 const adj = (d, key) => (d.summary.adjusted_keys.includes(key) ? ' *' : '');
 
 function renderDeductions(d) {
-  $('dedBody').innerHTML = d.deduction_items.map((i) => `<tr><th>${esc(i.label)}</th><td>${yen(d.deductions[i.key] || 0)}</td></tr>`).join('');
+  $('dedBody').innerHTML = d.deduction_items.map((i) => `<tr><th>${esc(i.label)}${i.key === 'income_tax' && d.income_tax_auto ? ' <span class="text-muted" style="font-size:11px;font-weight:400;">(自動計算)</span>' : ''}</th><td>${yen(d.deductions[i.key] || 0)}</td></tr>`).join('');
   $('dTotal').textContent = yen(d.deductions_total);
   $('nGross').textContent = yen(d.summary.total_pay);
   $('nDeduct').textContent = yen(d.deductions_total);

@@ -32,6 +32,7 @@
         </div>
         <button class="btn" id="reloadBtn" type="button">表示</button>
         <button class="btn secondary" id="csvBtn" type="button">CSV出力</button>
+        <a class="btn" id="newEmployeeLink" href="/employee-new.html" style="text-decoration:none;display:inline-block;">社員情報を登録</a>
       </div>
 
       <div class="pay-rates">
@@ -50,20 +51,21 @@
         <table class="pay-table">
           <thead>
             <tr>
-              <th>社員番号</th><th>氏名</th><th>時給(円)</th><th>出勤日数</th>
-              <th>勤務時間</th><th>時間外</th><th>深夜</th><th>休日</th><th>支給額(円)</th><th>控除合計(円)</th><th>差引支給額(円)</th><th>明細書</th>
+              <th>社員番号</th><th>氏名</th><th>時給(円)</th><th>税区分・扶養</th><th>出勤日数</th>
+              <th>勤務時間</th><th>時間外</th><th>深夜</th><th>休日</th><th>支給額(円)</th><th>所得税(円)</th><th>控除合計(円)</th><th>差引支給額(円)</th><th>明細書</th>
             </tr>
           </thead>
           <tbody id="payBody">
-            <tr><td colspan="12" class="text-muted">読み込み中...</td></tr>
+            <tr><td colspan="14" class="text-muted">読み込み中...</td></tr>
           </tbody>
         </table>
       </div>
       <div id="wageMsg"></div>
-      <button class="btn" id="saveWagesBtn" type="button" disabled>変更した時給を保存</button>
+      <button class="btn" id="saveWagesBtn" type="button" disabled>変更した内容を保存</button>
       <p class="text-muted" style="font-size:12px;margin-top:14px;">
         計算の目安です。勤務時間は休憩を除いて日本時間で日ごとに集計し、日をまたぐ勤務は日付ごとに分けます。
-        社会保険料・税・手当などは含みません。実際の支給にあたっては就業規則や法令に沿って確認してください。
+        所得税は、令和8年分の源泉徴収税額表(月額表・甲欄)の算式で自動計算します。支給額から社会保険料と非課税の通勤手当(月額150,000円まで)を除いた金額が基準なので、社会保険料は明細の編集ページで入力してください。乙欄の社員は自動計算の対象外です。
+        実際の支給にあたっては就業規則や法令に沿って確認してください。
       </p>
     </div>
   </main>
@@ -88,12 +90,12 @@ const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => (
 $('month').value = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 7);
 
 let rowsCache = [];
-const pendingWages = {};
+const pendingChanges = {}; // 社員ID → { hourly_wage?, tax_table?, dependents? }(変更した項目だけ)
 
 function updateSaveButton() {
-  const n = Object.keys(pendingWages).length;
+  const n = Object.keys(pendingChanges).length;
   $('saveWagesBtn').disabled = n === 0;
-  $('saveWagesBtn').textContent = n ? `変更した時給を保存(${n}件)` : '変更した時給を保存';
+  $('saveWagesBtn').textContent = n ? `変更した内容を保存(${n}件)` : '変更した内容を保存';
 }
 
 function render(data) {
@@ -108,7 +110,7 @@ function render(data) {
   $('payTotal').innerHTML = `<span>${data.month.replace('-', '年')}月の支給額合計</span><strong>${yen(total)}円</strong><span>差引支給額の合計 ${yen(netTotal)}円</span><span>総勤務時間 ${hm(minutes)}</span>`;
 
   if (!data.rows.length) {
-    $('payBody').innerHTML = '<tr><td colspan="12" class="text-muted">対象の社員がいません。</td></tr>';
+    $('payBody').innerHTML = '<tr><td colspan="14" class="text-muted">対象の社員がいません。</td></tr>';
     return;
   }
   $('payBody').innerHTML = data.rows.map((r) => {
@@ -119,12 +121,14 @@ function render(data) {
       <td>${escapeHtml(r.employee_code)}</td>
       <td>${escapeHtml(r.name)}${r.active ? '' : ' <span class="text-muted">(無効)</span>'}${warn}${adjusted}</td>
       <td><input type="number" class="wage-input${noWage}" data-id="${r.id}" data-original="${r.hourly_wage == null ? '' : r.hourly_wage}" value="${r.hourly_wage == null ? '' : r.hourly_wage}" min="0" step="10" placeholder="未設定" inputmode="numeric"></td>
+      <td class="tax-cell"><select class="tax-input tax-table-input" data-id="${r.id}" data-field="tax_table" data-original="${r.tax_table}" aria-label="${escapeHtml(r.name)}の税区分"><option value="kou"${r.tax_table === 'otsu' ? '' : ' selected'}>甲</option><option value="otsu"${r.tax_table === 'otsu' ? ' selected' : ''}>乙</option></select> <input type="number" class="tax-input dependents-input" data-id="${r.id}" data-field="dependents" data-original="${r.dependents}" value="${r.dependents}" min="0" max="20" step="1" inputmode="numeric" aria-label="${escapeHtml(r.name)}の扶養親族等の数"${r.tax_table === 'otsu' ? ' disabled' : ''}>人</td>
       <td class="num">${r.work_days}日</td>
       <td class="num">${hm(r.total_minutes)}</td>
       <td class="num">${hm(r.overtime_minutes)}</td>
       <td class="num">${hm(r.night_minutes)}</td>
       <td class="num">${hm(r.holiday_minutes)}</td>
       <td class="num pay-amount" title="基本 ${yen(r.base_pay)} + 時間外 ${yen(r.overtime_pay)} + 深夜 ${yen(r.night_pay)} + 休日 ${yen(r.holiday_pay)}">${r.hourly_wage ? yen(r.total_pay) : '<span class="text-muted">時給未設定</span>'}</td>
+      <td class="num" title="${r.income_tax_auto ? '自動計算' : '手入力'}">${r.hourly_wage || r.deductions_total ? yen(r.income_tax) : '<span class="text-muted">-</span>'}${r.income_tax_auto || !(r.hourly_wage || r.deductions_total) ? '' : ' <span class="pay-flag" title="明細の編集ページで手入力した金額です">手入力</span>'}</td>
       <td class="num">${r.hourly_wage || r.deductions_total ? yen(r.deductions_total) : '<span class="text-muted">-</span>'}</td>
       <td class="num pay-amount">${r.hourly_wage || r.deductions_total ? yen(r.net_pay) : '<span class="text-muted">-</span>'}</td>
       <td><a class="slip-link" href="/payslip.html?id=${r.id}&month=${data.month}" data-slip="${r.id}">明細書</a> <a class="slip-link slip-edit-link" href="/payslip-edit.html?id=${r.id}&month=${data.month}" data-slip="${r.id}">編集</a></td>
@@ -135,24 +139,38 @@ function render(data) {
     a.addEventListener('click', () => { try { sessionStorage.setItem('payslip_target', JSON.stringify({ id: a.dataset.slip, month: data.month })); } catch (e) { /* 保存できなくても、リンクのクエリで遷移できる */ } });
   });
 
-  document.querySelectorAll('.wage-input').forEach((input) => {
-    input.addEventListener('input', () => {
-      if (input.value !== input.dataset.original) { pendingWages[input.dataset.id] = input.value; input.classList.add('log-edit-dirty'); }
-      else { delete pendingWages[input.dataset.id]; input.classList.remove('log-edit-dirty'); }
+  // 時給・税区分・扶養親族等の数は、変更した項目だけを保存対象にする
+  document.querySelectorAll('.wage-input, .tax-input').forEach((input) => {
+    const field = input.dataset.field || 'hourly_wage';
+    const onChange = () => {
+      const id = input.dataset.id;
+      if (input.value !== input.dataset.original) {
+        pendingChanges[id] = Object.assign(pendingChanges[id] || {}, { [field]: input.value });
+        input.classList.add('log-edit-dirty');
+      } else {
+        if (pendingChanges[id]) delete pendingChanges[id][field];
+        if (pendingChanges[id] && !Object.keys(pendingChanges[id]).length) delete pendingChanges[id];
+        input.classList.remove('log-edit-dirty');
+      }
+      if (field === 'tax_table') {
+        const dep = input.closest('tr').querySelector('.dependents-input');
+        if (dep) dep.disabled = input.value === 'otsu';
+      }
       updateSaveButton();
-    });
+    };
+    input.addEventListener(input.tagName === 'SELECT' ? 'change' : 'input', onChange);
   });
   updateSaveButton();
 }
 
 async function load() {
   $('wageMsg').innerHTML = '';
-  Object.keys(pendingWages).forEach((k) => delete pendingWages[k]);
-  $('payBody').innerHTML = '<tr><td colspan="12" class="text-muted">読み込み中...</td></tr>';
+  Object.keys(pendingChanges).forEach((k) => delete pendingChanges[k]);
+  $('payBody').innerHTML = '<tr><td colspan="14" class="text-muted">読み込み中...</td></tr>';
   try {
     render(await Api.request(`/admin/payroll?month=${encodeURIComponent($('month').value)}`));
   } catch (err) {
-    $('payBody').innerHTML = `<tr><td colspan="12" class="error-msg">${escapeHtml(err.message)}</td></tr>`;
+    $('payBody').innerHTML = `<tr><td colspan="14" class="error-msg">${escapeHtml(err.message)}</td></tr>`;
   }
 }
 
@@ -160,12 +178,12 @@ $('reloadBtn').addEventListener('click', load);
 $('month').addEventListener('change', load);
 
 $('saveWagesBtn').addEventListener('click', async () => {
-  const wages = Object.entries(pendingWages).map(([id, v]) => ({ id: Number(id), hourly_wage: v === '' ? null : v }));
+  const wages = Object.entries(pendingChanges).map(([id, fields]) => ({ id: Number(id), ...fields }));
   $('saveWagesBtn').disabled = true;
   try {
     await Api.request('/admin/payroll/wages', { method: 'PUT', body: { wages } });
     await load();
-    $('wageMsg').innerHTML = `<div class="success-msg">${wages.length}件の時給を保存しました。</div>`;
+    $('wageMsg').innerHTML = `<div class="success-msg">${wages.length}件の変更を保存しました。</div>`;
   } catch (err) {
     $('wageMsg').innerHTML = `<div class="error-msg">${escapeHtml(err.message)}</div>`;
     updateSaveButton();
@@ -187,8 +205,8 @@ $('saveRatesBtn').addEventListener('click', async () => {
 
 $('csvBtn').addEventListener('click', () => {
   if (!rowsCache.length) return;
-  const header = ['社員番号', '氏名', '時給', '出勤日数', '勤務時間(分)', '時間外(分)', '深夜(分)', '休日(分)', '基本給', '時間外手当', '深夜手当', '休日手当', '支給額', '控除合計', '差引支給額'];
-  const lines = rowsCache.map((r) => [r.employee_code, r.name, r.hourly_wage == null ? '' : r.hourly_wage, r.work_days, r.total_minutes, r.overtime_minutes, r.night_minutes, r.holiday_minutes, r.base_pay, r.overtime_pay, r.night_pay, r.holiday_pay, r.total_pay, r.deductions_total, r.net_pay]
+  const header = ['社員番号', '氏名', '時給', '出勤日数', '勤務時間(分)', '時間外(分)', '深夜(分)', '休日(分)', '基本給', '時間外手当', '深夜手当', '休日手当', '支給額', '所得税', '控除合計', '差引支給額'];
+  const lines = rowsCache.map((r) => [r.employee_code, r.name, r.hourly_wage == null ? '' : r.hourly_wage, r.work_days, r.total_minutes, r.overtime_minutes, r.night_minutes, r.holiday_minutes, r.base_pay, r.overtime_pay, r.night_pay, r.holiday_pay, r.total_pay, r.income_tax, r.deductions_total, r.net_pay]
     .map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','));
   const csv = '﻿' + header.join(',') + '\n' + lines.join('\n');
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));

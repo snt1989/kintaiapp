@@ -65,6 +65,7 @@
             <thead><tr><th>項目</th><th></th><th>金額</th></tr></thead>
             <tbody id="dedBody"></tbody>
           </table>
+          <p class="text-muted" id="taxInfo" style="font-size:12px;margin-top:8px;"></p>
         </section>
       </div>
 
@@ -190,10 +191,17 @@ function render(d) {
   $('allowBody').innerHTML = d.allowance_items.map((i) =>
     `<tr><th><label for="allow_${i.key}">${esc(i.label)}</label></th><td></td><td><input type="text" inputmode="numeric" class="edit-input" id="allow_${i.key}" value="${d.summary.allowances[i.key] || 0}" autocomplete="off"><span class="unit">円</span></td></tr>`).join('');
 
-  $('dedBody').innerHTML = d.deduction_items.map((i) =>
-    `<tr><th><label for="ded_${i.key}">${esc(i.label)}</label></th><td></td><td><input type="text" inputmode="numeric" class="edit-input" id="ded_${i.key}" value="${d.deductions[i.key] || 0}" autocomplete="off"><span class="unit">円</span></td></tr>`).join('');
+  const taxAuto = d.employee.tax_table !== 'otsu' && d.income_tax_auto;
+  $('dedBody').innerHTML = d.deduction_items.map((i) => i.key === 'income_tax' && d.employee.tax_table !== 'otsu'
+    ? `<tr><th><label for="ded_income_tax">${esc(i.label)}</label></th><td><label class="tax-auto"><input type="checkbox" id="taxAuto"${taxAuto ? ' checked' : ''}>自動計算</label></td><td><input type="text" inputmode="numeric" class="edit-input" id="ded_income_tax" value="${d.deductions.income_tax || 0}" autocomplete="off"${taxAuto ? ' disabled' : ''}><span class="unit">円</span></td></tr>`
+    : `<tr><th><label for="ded_${i.key}">${esc(i.label)}</label></th><td></td><td><input type="text" inputmode="numeric" class="edit-input" id="ded_${i.key}" value="${d.deductions[i.key] || 0}" autocomplete="off"><span class="unit">円</span></td></tr>`).join('');
 
   document.querySelectorAll('.edit-input').forEach((i) => i.addEventListener('input', recalc));
+  const taxBox = $('taxAuto');
+  if (taxBox) taxBox.addEventListener('change', () => { $('ded_income_tax').disabled = taxBox.checked; recalc(); });
+  $('taxInfo').textContent = d.employee.tax_table === 'otsu'
+    ? '乙欄の社員は所得税を自動計算できません。金額を入力してください。'
+    : `「自動計算」は令和${d.income_tax_year - 2018}年分の源泉徴収税額表(月額表・甲欄)の算式で、扶養親族等${d.employee.dependents}人として計算します。社会保険料を変えたときは、保存すると所得税も再計算されます。表示中の金額は保存済みの内容での計算結果です。`;
   recalc();
   $('editBody').hidden = false;
 }
@@ -227,6 +235,8 @@ $('saveBtn').addEventListener('click', async () => {
     for (const f of PAY_FIELDS) overrides[f.key] = readField($(`pay_${f.key}`), 'yen');
     const allowances = {}; for (const i of data.allowance_items) allowances[i.key] = readField($(`allow_${i.key}`), 'yen');
     const deductions = {}; for (const i of data.deduction_items) deductions[i.key] = readField($(`ded_${i.key}`), 'yen');
+    // 「自動計算」のときは空欄で送り、サーバーが計算する。外したときの空欄は0円の手入力
+    if ($('taxAuto')) deductions.income_tax = $('taxAuto').checked ? null : (deductions.income_tax === null ? 0 : deductions.income_tax);
     body = { month: target.month, overrides, allowances, deductions };
   } catch (err) {
     $('saveMsg').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;

@@ -211,4 +211,82 @@ function sumDeductions(d) {
   return DEDUCTION_ITEMS.reduce((sum, i) => sum + (Number(d && d[i.key]) || 0), 0);
 }
 
-module.exports = { ALLOWANCE_ITEMS, ATTENDANCE_KEYS, PAY_KEYS, payFromMinutes, finalizeEmployee, DEDUCTION_ITEMS, emptyDeductions, sumDeductions, calculateEmployee, summarizeDays, dailyBreakdown, monthRangeIso, DEFAULT_RATES };
+// ---- 所得税(源泉徴収) ----
+// 国税庁「給与所得の源泉徴収税額表(月額表)」甲欄の「電算機計算の特例」の算式を使う。
+//   1. 課税対象の支給額 − 社会保険料 = A(社会保険料等控除後の給与等の金額)
+//   2. 課税給与所得金額 B = A − 給与所得控除 − 基礎控除 − 31,667円 × 扶養親族等の数(控除対象配偶者を含む)
+//   3. B に税率と控除額(復興特別所得税を含む)を適用し、10円未満を四捨五入する
+// 令和8年分(2026年)の表を使う。令和9年分以降は給与所得控除・基礎控除の最低額が変わる。
+// 乙欄(扶養控除等申告書を出していない従たる給与など)は自動計算の対象外とし、手入力にする。
+const TAX_TABLES = {
+  2026: { minSalaryDeduction: 54167, saMax: 158333, basicMax: 48334 },
+  2027: { minSalaryDeduction: 57500, saMax: 169444, basicMax: 51667 },
+};
+const DEPENDENT_DEDUCTION = 31667;
+const COMMUTE_TAX_FREE_LIMIT = 150000; // 通勤手当の非課税限度額(月額)
+const MAX_DEPENDENTS = 20;
+// [Bの上限, 税率(10万分の何か), 控除額]
+const TAX_BRACKETS = [
+  [162500, 5105, 0],
+  [275000, 10210, 8296],
+  [579166, 20420, 36374],
+  [750000, 23483, 54113],
+  [1500000, 33693, 130688],
+  [3333333, 40840, 237893],
+  [Infinity, 45945, 408061],
+];
+
+function taxTableFor(month) {
+  const year = Number(String(month || '').slice(0, 4));
+  return year >= 2027 ? { year: 2027, ...TAX_TABLES[2027] } : { year: 2026, ...TAX_TABLES[2026] };
+}
+
+// 甲欄の源泉所得税額(円)。a は社会保険料等控除後の給与等の金額
+function incomeTaxKou(a, dependents, month) {
+  const amount = Math.floor(Number(a) || 0);
+  if (amount <= 0) return 0;
+  const t = taxTableFor(month);
+  let salaryDeduction;
+  if (amount <= t.saMax) salaryDeduction = t.minSalaryDeduction;
+  else if (amount < 300000) salaryDeduction = Math.ceil((amount * 30) / 100) + 6667;
+  else if (amount < 550000) salaryDeduction = Math.ceil((amount * 20) / 100) + 36667;
+  else if (amount < 708331) salaryDeduction = Math.ceil((amount * 10) / 100) + 91667;
+  else salaryDeduction = 162500;
+  let basic;
+  if (amount <= 2120833) basic = t.basicMax;
+  else if (amount <= 2162499) basic = 40000;
+  else if (amount <= 2204166) basic = 26667;
+  else if (amount <= 2245833) basic = 13334;
+  else basic = 0;
+  const n = Math.min(MAX_DEPENDENTS, Math.max(0, Math.floor(Number(dependents) || 0)));
+  const b = amount - salaryDeduction - basic - DEPENDENT_DEDUCTION * n;
+  if (b <= 0) return 0;
+  const [, rate, minus] = TAX_BRACKETS.find(([limit]) => b <= limit);
+  const tax = Math.floor((b * rate) / 100000) - minus;
+  return Math.max(0, Math.round(tax / 10) * 10);
+}
+
+// 所得税の課税対象となる、社会保険料控除後の金額(通勤手当は非課税限度額まで除く)
+function taxableBase(summary, deductions) {
+  const commute = Math.min(Number(summary && summary.allowances && summary.allowances.commute_allowance) || 0, COMMUTE_TAX_FREE_LIMIT);
+  const gross = Math.max(0, (Number(summary && summary.total_pay) || 0) - commute);
+  const social = ['health_insurance', 'pension', 'employment_insurance'].reduce((sum, k) => sum + (Number(deductions && deductions[k]) || 0), 0);
+  return Math.max(0, gross - social);
+}
+
+// 控除の金額に所得税の自動計算を反映する。
+//   manualTax が true、または税区分が乙欄のときは、入力済みの所得税をそのまま使う
+//   戻り値: { deductions, income_tax_auto(自動計算した場合 true), income_tax_base(計算の基準額) }
+function applyIncomeTax(deductions, summary, emp, month, manualTax) {
+  const base = { ...emptyDeductions(), ...(deductions || {}) };
+  const useAuto = !manualTax && (!emp || emp.tax_table !== 'otsu');
+  if (!useAuto) return { deductions: base, income_tax_auto: false, income_tax_base: null };
+  const a = taxableBase(summary, base);
+  return {
+    deductions: { ...base, income_tax: incomeTaxKou(a, emp && emp.dependents, month) },
+    income_tax_auto: true,
+    income_tax_base: a,
+  };
+}
+
+module.exports = { incomeTaxKou, taxableBase, applyIncomeTax, taxTableFor, MAX_DEPENDENTS, ALLOWANCE_ITEMS, ATTENDANCE_KEYS, PAY_KEYS, payFromMinutes, finalizeEmployee, DEDUCTION_ITEMS, emptyDeductions, sumDeductions, calculateEmployee, summarizeDays, dailyBreakdown, monthRangeIso, DEFAULT_RATES };

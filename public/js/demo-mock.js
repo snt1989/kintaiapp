@@ -242,7 +242,85 @@ function loadPayroll() {
     return DEDUCTION_ITEMS.reduce((sum, i) => sum + (Number(d && d[i.key]) || 0), 0);
   }
 
-  module.exports = { ALLOWANCE_ITEMS, ATTENDANCE_KEYS, PAY_KEYS, payFromMinutes, finalizeEmployee, DEDUCTION_ITEMS, emptyDeductions, sumDeductions, calculateEmployee, summarizeDays, dailyBreakdown, monthRangeIso, DEFAULT_RATES };
+  // ---- 所得税(源泉徴収) ----
+  // 国税庁「給与所得の源泉徴収税額表(月額表)」甲欄の「電算機計算の特例」の算式を使う。
+  //   1. 課税対象の支給額 − 社会保険料 = A(社会保険料等控除後の給与等の金額)
+  //   2. 課税給与所得金額 B = A − 給与所得控除 − 基礎控除 − 31,667円 × 扶養親族等の数(控除対象配偶者を含む)
+  //   3. B に税率と控除額(復興特別所得税を含む)を適用し、10円未満を四捨五入する
+  // 令和8年分(2026年)の表を使う。令和9年分以降は給与所得控除・基礎控除の最低額が変わる。
+  // 乙欄(扶養控除等申告書を出していない従たる給与など)は自動計算の対象外とし、手入力にする。
+  const TAX_TABLES = {
+    2026: { minSalaryDeduction: 54167, saMax: 158333, basicMax: 48334 },
+    2027: { minSalaryDeduction: 57500, saMax: 169444, basicMax: 51667 },
+  };
+  const DEPENDENT_DEDUCTION = 31667;
+  const COMMUTE_TAX_FREE_LIMIT = 150000; // 通勤手当の非課税限度額(月額)
+  const MAX_DEPENDENTS = 20;
+  // [Bの上限, 税率(10万分の何か), 控除額]
+  const TAX_BRACKETS = [
+    [162500, 5105, 0],
+    [275000, 10210, 8296],
+    [579166, 20420, 36374],
+    [750000, 23483, 54113],
+    [1500000, 33693, 130688],
+    [3333333, 40840, 237893],
+    [Infinity, 45945, 408061],
+  ];
+
+  function taxTableFor(month) {
+    const year = Number(String(month || '').slice(0, 4));
+    return year >= 2027 ? { year: 2027, ...TAX_TABLES[2027] } : { year: 2026, ...TAX_TABLES[2026] };
+  }
+
+  // 甲欄の源泉所得税額(円)。a は社会保険料等控除後の給与等の金額
+  function incomeTaxKou(a, dependents, month) {
+    const amount = Math.floor(Number(a) || 0);
+    if (amount <= 0) return 0;
+    const t = taxTableFor(month);
+    let salaryDeduction;
+    if (amount <= t.saMax) salaryDeduction = t.minSalaryDeduction;
+    else if (amount < 300000) salaryDeduction = Math.ceil((amount * 30) / 100) + 6667;
+    else if (amount < 550000) salaryDeduction = Math.ceil((amount * 20) / 100) + 36667;
+    else if (amount < 708331) salaryDeduction = Math.ceil((amount * 10) / 100) + 91667;
+    else salaryDeduction = 162500;
+    let basic;
+    if (amount <= 2120833) basic = t.basicMax;
+    else if (amount <= 2162499) basic = 40000;
+    else if (amount <= 2204166) basic = 26667;
+    else if (amount <= 2245833) basic = 13334;
+    else basic = 0;
+    const n = Math.min(MAX_DEPENDENTS, Math.max(0, Math.floor(Number(dependents) || 0)));
+    const b = amount - salaryDeduction - basic - DEPENDENT_DEDUCTION * n;
+    if (b <= 0) return 0;
+    const [, rate, minus] = TAX_BRACKETS.find(([limit]) => b <= limit);
+    const tax = Math.floor((b * rate) / 100000) - minus;
+    return Math.max(0, Math.round(tax / 10) * 10);
+  }
+
+  // 所得税の課税対象となる、社会保険料控除後の金額(通勤手当は非課税限度額まで除く)
+  function taxableBase(summary, deductions) {
+    const commute = Math.min(Number(summary && summary.allowances && summary.allowances.commute_allowance) || 0, COMMUTE_TAX_FREE_LIMIT);
+    const gross = Math.max(0, (Number(summary && summary.total_pay) || 0) - commute);
+    const social = ['health_insurance', 'pension', 'employment_insurance'].reduce((sum, k) => sum + (Number(deductions && deductions[k]) || 0), 0);
+    return Math.max(0, gross - social);
+  }
+
+  // 控除の金額に所得税の自動計算を反映する。
+  //   manualTax が true、または税区分が乙欄のときは、入力済みの所得税をそのまま使う
+  //   戻り値: { deductions, income_tax_auto(自動計算した場合 true), income_tax_base(計算の基準額) }
+  function applyIncomeTax(deductions, summary, emp, month, manualTax) {
+    const base = { ...emptyDeductions(), ...(deductions || {}) };
+    const useAuto = !manualTax && (!emp || emp.tax_table !== 'otsu');
+    if (!useAuto) return { deductions: base, income_tax_auto: false, income_tax_base: null };
+    const a = taxableBase(summary, base);
+    return {
+      deductions: { ...base, income_tax: incomeTaxKou(a, emp && emp.dependents, month) },
+      income_tax_auto: true,
+      income_tax_base: a,
+    };
+  }
+
+  module.exports = { incomeTaxKou, taxableBase, applyIncomeTax, taxTableFor, MAX_DEPENDENTS, ALLOWANCE_ITEMS, ATTENDANCE_KEYS, PAY_KEYS, payFromMinutes, finalizeEmployee, DEDUCTION_ITEMS, emptyDeductions, sumDeductions, calculateEmployee, summarizeDays, dailyBreakdown, monthRangeIso, DEFAULT_RATES };
   return module.exports;
 }
 // <payroll:end>
@@ -309,6 +387,8 @@ function loadPayroll() {
       active: o.active === 0 ? 0 : 1,
       division: o.division || null,
       hourly_wage: o.wage === undefined ? null : o.wage,
+      tax_table: o.taxTable === 'otsu' ? 'otsu' : 'kou',
+      dependents: o.dependents || 0,
       created_at: new Date().toISOString(),
     };
     s.employees.push(e);
@@ -358,7 +438,7 @@ function loadPayroll() {
     ['建設事業部', '設備事業部', '製造事業部', '管理部'].forEach(function (n) { addDivision(s, n); });
 
     addEmployee(s, { code: '0001', last: '佐藤', first: '管理', role: 'admin', division: '管理部' });
-    var tanaka = addEmployee(s, { code: '0002', last: '田中', first: '一郎', division: '建設事業部', wage: 1500 });
+    var tanaka = addEmployee(s, { code: '0002', last: '田中', first: '一郎', division: '建設事業部', wage: 1500, dependents: 1 });
     var suzuki = addEmployee(s, { code: '0003', last: '鈴木', first: '花子', division: '設備事業部', wage: 1400 });
     var takahashi = addEmployee(s, { code: '0004', last: '高橋', first: '健太', role: 'contractor', division: '建設事業部', wage: 1800 });
     var ito = addEmployee(s, { code: '0005', last: '伊藤', first: '美咲', role: 'partner', division: '設備事業部', wage: 1300 });
@@ -423,7 +503,7 @@ function loadPayroll() {
     var lastMonth = prevMonthOf(today);
     s.adjustments[tanaka.id + '|' + lastMonth] = { overrides: {}, allowances: { commute_allowance: 6000, other_allowance: 0 } };
     s.deductions[tanaka.id + '|' + lastMonth] = {
-      health_insurance: 7500, pension: 13500, employment_insurance: 450, income_tax: 2100, resident_tax: 5000, other: 0,
+      health_insurance: 7500, pension: 13500, employment_insurance: 450, income_tax: 0, resident_tax: 5000, other: 0,
     };
     return s;
   }
@@ -468,7 +548,8 @@ function loadPayroll() {
   function listedEmployee(e) {
     return {
       id: e.id, employee_code: e.employee_code, name: e.name, last_name: e.last_name, first_name: e.first_name,
-      role: e.role, active: e.active, division: e.division, created_at: e.created_at,
+      role: e.role, active: e.active, division: e.division, hourly_wage: e.hourly_wage,
+      tax_table: e.tax_table === 'otsu' ? 'otsu' : 'kou', dependents: e.dependents || 0, created_at: e.created_at,
     };
   }
   function divisionWithCount(d) {
@@ -772,6 +853,28 @@ function loadPayroll() {
 
   route('GET', '/admin/employees', ADMIN, function () { return ok({ employees: sortedEmployees().map(listedEmployee) }); });
 
+  // 税区分・扶養親族等の数・時給の入力チェック(server/routes/admin.js の parsePayFields と同じ)
+  function parsePayFields(body, requireAll) {
+    var out = {};
+    var isBlank = function (v) { return v === null || v === undefined || String(v).trim() === ''; };
+    if (body.tax_table !== undefined || requireAll) {
+      var t = isBlank(body.tax_table) ? 'kou' : String(body.tax_table);
+      if (t !== 'kou' && t !== 'otsu') return { error: '税区分は甲欄・乙欄のどちらかを選んでください。' };
+      out.tax_table = t;
+    }
+    if (body.dependents !== undefined || requireAll) {
+      var d = isBlank(body.dependents) ? '0' : String(body.dependents).trim();
+      if (!/^\d{1,2}$/.test(d) || Number(d) > payroll.MAX_DEPENDENTS) return { error: '扶養親族等の数は0〜' + payroll.MAX_DEPENDENTS + 'の半角数字で入力してください。' };
+      out.dependents = Number(d);
+    }
+    if (body.hourly_wage !== undefined) {
+      if (isBlank(body.hourly_wage)) out.hourly_wage = null;
+      else if (!/^\d{1,6}$/.test(String(body.hourly_wage).trim())) return { error: '時給は半角数字(円)で入力してください(例: 1500)。' };
+      else out.hourly_wage = Number(String(body.hourly_wage).trim());
+    }
+    return { value: out };
+  }
+
   route('POST', '/admin/employees', ADMIN, function (ctx) {
     var b = ctx.body;
     if (!b.employee_code || !b.last_name || !String(b.last_name).trim() || !b.first_name || !String(b.first_name).trim() || !b.password) {
@@ -783,8 +886,11 @@ function loadPayroll() {
     if (division && !findDivisionByName(division)) return fail(400, '指定された事業部はマスタに登録されていません。');
     var code = String(b.employee_code).trim();
     if (state.employees.some(function (e) { return e.employee_code === code; })) return fail(409, 'この社員番号は既に登録されています。');
+    var pay = parsePayFields(b, true);
+    if (pay.error) return fail(400, pay.error);
     var e = addEmployee(state, {
       code: code, last: String(b.last_name).trim(), first: String(b.first_name).trim(), password: String(b.password), role: role, division: division,
+      wage: pay.value.hourly_wage === undefined ? null : pay.value.hourly_wage, taxTable: pay.value.tax_table, dependents: pay.value.dependents,
     });
     return ok({ employee: listedEmployee(e) });
   });
@@ -869,7 +975,11 @@ function loadPayroll() {
     }
     if (division && !findDivisionByName(division)) return fail(400, '指定された事業部はマスタに登録されていません。');
     if (b.new_password && String(b.new_password).length < 3) return fail(400, 'パスワードは3文字以上にしてください。');
+    var pay = parsePayFields({ tax_table: b.tax_table, dependents: b.dependents }, false);
+    if (pay.error) return fail(400, pay.error);
     Object.assign(e, { employee_code: code, name: name, last_name: last, first_name: first, role: role, active: active, division: division });
+    if (pay.value.tax_table !== undefined) e.tax_table = pay.value.tax_table;
+    if (pay.value.dependents !== undefined) e.dependents = pay.value.dependents;
     if (b.new_password) e.password = String(b.new_password);
     return ok({ employee: listedEmployee(e) });
   });
@@ -981,10 +1091,16 @@ function loadPayroll() {
       var calc = payroll.calculateEmployee(mine, e.hourly_wage, rates, month);
       var fin = payroll.finalizeEmployee(calc, adjustmentsFor(e.id, month), e.hourly_wage, rates);
       var ded = deductionsFor(e.id, month);
-      var deductionsTotal = payroll.sumDeductions(ded);
+      var emp = { tax_table: e.tax_table === 'otsu' ? 'otsu' : 'kou', dependents: e.dependents || 0 };
+      var tax = payroll.applyIncomeTax(ded, fin, emp, month, ded && ded.income_tax_manual);
+      var deductionsTotal = payroll.sumDeductions(tax.deductions);
       return Object.assign({
         id: e.id, employee_code: e.employee_code, name: e.name, division: e.division, active: e.active, hourly_wage: e.hourly_wage,
-      }, fin, { deductions_total: deductionsTotal, net_pay: fin.total_pay - deductionsTotal });
+        tax_table: emp.tax_table, dependents: emp.dependents,
+      }, fin, {
+        income_tax: tax.deductions.income_tax, income_tax_auto: tax.income_tax_auto,
+        deductions_total: deductionsTotal, net_pay: fin.total_pay - deductionsTotal,
+      });
     }).filter(function (r) { return r.active || r.total_minutes > 0; }); // 無効な社員は、その月に勤務がある場合だけ表示する
     return ok({ month: month, rates: rates, rows: rows });
   });
@@ -1003,18 +1119,26 @@ function loadPayroll() {
     var computed = payroll.calculateEmployee(logs, emp.hourly_wage, rates, month);
     var adjustments = adjustmentsFor(emp.id, month);
     var summary = payroll.finalizeEmployee(computed, adjustments, emp.hourly_wage, rates);
-    var deductionsTotal = payroll.sumDeductions(deductions);
+    var taxEmp = { tax_table: emp.tax_table === 'otsu' ? 'otsu' : 'kou', dependents: emp.dependents || 0 };
+    var tax = payroll.applyIncomeTax(deductions, summary, taxEmp, month, ded && ded.income_tax_manual);
+    var deductionsTotal = payroll.sumDeductions(tax.deductions);
     return ok({
       month: month,
       issued_on: new Date(Date.now() + JST_OFFSET_MS).toISOString().slice(0, 10),
-      employee: { id: emp.id, employee_code: emp.employee_code, name: emp.name, division: emp.division, hourly_wage: emp.hourly_wage },
+      employee: {
+        id: emp.id, employee_code: emp.employee_code, name: emp.name, division: emp.division, hourly_wage: emp.hourly_wage,
+        tax_table: taxEmp.tax_table, dependents: taxEmp.dependents,
+      },
       rates: rates,
       summary: summary,
       computed: computed,
       overrides: adjustments.overrides,
       allowance_items: payroll.ALLOWANCE_ITEMS,
       deduction_items: payroll.DEDUCTION_ITEMS,
-      deductions: deductions,
+      deductions: tax.deductions,
+      income_tax_auto: tax.income_tax_auto,
+      income_tax_base: tax.income_tax_base,
+      income_tax_year: payroll.taxTableFor(month).year,
       deductions_total: deductionsTotal,
       net_pay: summary.total_pay - deductionsTotal,
       days: payroll.dailyBreakdown(logs, month),
@@ -1024,15 +1148,16 @@ function loadPayroll() {
   route('PUT', '/admin/payroll/wages', ADMIN, function (ctx) {
     var wages = ctx.body.wages;
     if (!Array.isArray(wages) || wages.length === 0) return fail(400, '保存する時給がありません。');
+    // 各行は時給・税区分・扶養親族等の数のうち、変更した項目だけを持つ
+    var parsed = [];
     for (var i = 0; i < wages.length; i += 1) {
-      var raw = wages[i].hourly_wage;
-      if (raw !== null && raw !== '' && raw !== undefined && !/^\d{1,6}$/.test(String(raw))) {
-        return fail(400, '時給は半角数字(円)で入力してください(例: 1500)。');
-      }
+      var r0 = parsePayFields(wages[i], false);
+      if (r0.error) return fail(400, r0.error);
+      parsed.push({ id: wages[i].id, fields: r0.value });
     }
-    wages.forEach(function (w) {
-      var e = employeeById(w.id);
-      if (e) e.hourly_wage = w.hourly_wage === null || w.hourly_wage === '' || w.hourly_wage === undefined ? null : Number(w.hourly_wage);
+    parsed.forEach(function (p) {
+      var e = employeeById(p.id);
+      if (e) Object.assign(e, p.fields);
     });
     return ok({ updated: wages.length });
   });
@@ -1093,6 +1218,10 @@ function loadPayroll() {
       if (rd.error) return fail(400, rd.error);
       cleanDeductions[di.key] = rd.value;
     }
+    // 所得税が空欄なら自動計算に切り替える。乙欄の社員は自動計算できないので、入力値(空欄は0円)を使う
+    var incomeTaxManual = emp.tax_table === 'otsu' || !isBlank(deductions.income_tax);
+    if (!incomeTaxManual) cleanDeductions.income_tax = 0;
+    cleanDeductions.income_tax_manual = incomeTaxManual;
     state.adjustments[emp.id + '|' + month] = { overrides: cleanOverrides, allowances: cleanAllowances };
     state.deductions[emp.id + '|' + month] = cleanDeductions;
     return ok({ ok: true });
