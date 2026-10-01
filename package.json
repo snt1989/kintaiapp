@@ -1,7 +1,7 @@
 {
   "name": "sanoh-attendance",
   "version": "1.0.0",
-  "description": "株式会社三桜 勤怠管理アプリ",
+  "description": "勤怠管理アプリ",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
@@ -10,7 +10,7 @@
     "add-employee": "node server/scripts/addEmployee.js"
   },
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   },
   "dependencies": {
     "pg": "^8.13.0",

@@ -16,5 +16,5 @@ app.get('*', (req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`三桜 勤怠管理システム起動: http://localhost:${PORT}`);
+  console.log(`勤怠管理システム起動: http://localhost:${PORT}`);
 });
