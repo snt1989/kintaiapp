@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>個別勤怠 | 勤怠管理システム</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  .att-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+  .att-controls > div { min-width: 0; }
+  .att-controls .emp-field { flex: 2 1 240px; }
+  .att-controls .month-field { flex: 1 1 200px; }
+  .att-controls .view-field { flex: 0 1 130px; }
+  .att-controls .div-field { flex: 2 1 240px; }
+  .att-controls [hidden] { display: none; }
+  .att-controls .btn { margin-top: 0; width: auto; padding: 12px 16px; }
+  .month-row { display: flex; gap: 6px; align-items: stretch; }
+  .month-row input { flex: 1; min-width: 0; }
+  .att-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .att-stats .stat-box .num { font-size: 20px; font-variant-numeric: tabular-nums; }
+  .att-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-bottom: 12px; }
+  .att-who strong { font-size: 18px; }
+  .att-table td, .att-table th { white-space: nowrap; }
+  .att-table td.num, .att-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .att-table td.wrap { white-space: normal; min-width: 120px; }
+  .att-table tr.sunday td:first-child { color: var(--color-danger); }
+  .att-flag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #fef3c7; color: #92400e; }
+  .att-empty { padding: 28px 8px; text-align: center; color: var(--color-text-muted); }
+</style>
+</head>
+<body>
+<div class="app wide">
+  <header class="topbar">
+    <h1>個別勤怠</h1>
+    <div class="user-info">
+      <span id="userName"></span>
+      <button class="logout-btn" id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <nav class="admin-subnav">
+    <a href="/employee-attendance.html" class="active">個別勤怠</a>
+    <a href="/payroll.html">給与計算</a>
+    <a href="/employees.html">社員管理</a>
+    <a href="/master.html">マスタ管理</a>
+    <a href="/admin.html">勤怠ログ</a>
+  </nav>
+
+  <main>
+    <div class="card">
+      <div class="att-controls">
+        <div class="view-field">
+          <label for="viewMode">表示</label>
+          <select id="viewMode">
+            <option value="employee">社員別</option>
+            <option value="division">事業部別</option>
+          </select>
+        </div>
+        <div class="emp-field" id="empField">
+          <label for="empSelect">社員</label>
+          <select id="empSelect"><option value="">読み込み中...</option></select>
+        </div>
+        <div class="div-field" id="divField" hidden>
+          <label for="divSelect">事業部</label>
+          <select id="divSelect"><option value="">すべての事業部</option></select>
+        </div>
+        <div class="month-field">
+          <label for="month">対象月</label>
+          <div class="month-row">
+            <button class="btn secondary small" id="prevMonth" type="button" aria-label="前の月">◀</button>
+            <input type="month" id="month">
+            <button class="btn secondary small" id="nextMonth" type="button" aria-label="次の月">▶</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="pageMsg"></div>
+
+    <div id="result" hidden>
+      <div class="card">
+        <div class="att-who">
+          <strong id="whoName"></strong>
+          <span class="text-muted" id="whoMeta"></span>
+          <a class="slip-link" id="slipLink" href="/payroll.html">給与計算を見る</a>
+        </div>
+        <div class="att-stats" id="stats"></div>
+        <div id="incompleteNote"></div>
+
+        <div class="section-title">日別の勤務</div>
+        <div class="table-wrap">
+          <table class="att-table">
+            <thead>
+              <tr><th>日付</th><th class="num">出勤</th><th class="num">退勤</th><th class="num">休憩</th><th class="num">勤務時間</th><th class="num">時間外</th><th class="num">深夜</th><th class="num">休日</th><th>事業部</th><th>現場名</th><th>入力方法</th></tr>
+            </thead>
+            <tbody id="dayBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">打刻の明細</div>
+        <div class="table-wrap">
+          <table class="att-table">
+            <thead>
+              <tr><th>日付</th><th class="num">時刻</th><th>種別</th><th>事業部</th><th>現場名</th><th>備考</th><th>入力方法</th></tr>
+            </thead>
+            <tbody id="logBody"></tbody>
+          </table>
+        </div>
+        <p class="text-muted" style="font-size:12px;margin-top:10px;">
+          勤務時間は休憩を除いて日本時間で日ごとに集計します。時間外は1日8時間を超えた分、深夜は22時〜5時、休日は日曜の勤務です。
+          退勤が打刻されていない出勤は、勤務時間に含まれません。打刻の修正は「勤怠ログ」で行います。
+        </p>
+      </div>
+    </div>
+
+    <div id="divResult" hidden>
+      <div class="card">
+        <div class="section-title">事業部ごとの合計</div>
+        <div class="table-wrap">
+          <table class="att-table">
+            <thead><tr><th>事業部</th><th class="num">人数</th><th class="num">出勤日数(延べ)</th><th class="num">総勤務時間</th><th class="num">時間外</th><th class="num">深夜</th><th class="num">休日</th></tr></thead>
+            <tbody id="divTotalBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title" id="divDetailTitle">日別の一覧</div>
+        <div class="table-wrap">
+          <table class="att-table">
+            <thead><tr><th>日付</th><th>社員</th><th>事業部</th><th>現場名</th><th class="num">出勤</th><th class="num">退勤</th><th class="num">休憩</th><th class="num">勤務時間</th><th class="num">時間外</th><th class="num">深夜</th><th class="num">休日</th></tr></thead>
+            <tbody id="divBody"></tbody>
+          </table>
+        </div>
+        <p class="text-muted" style="font-size:12px;margin-top:10px;">事業部と現場名は、その日の打刻(出勤を優先)に入力されたものです。1日に複数の事業部で打刻した場合は、出勤の打刻の事業部にまとめています。打刻に事業部がない日は、社員の所属事業部を表示します。</p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/js/demo-mock.js"></script>
+<script src="/js/api.js"></script>
+<script>
+Api.requireAdmin();
+const employee = Api.getEmployee();
+document.getElementById('userName').textContent = `${employee.name} (管理者)`;
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  Api.clearSession();
+  location.href = '/index.html';
+});
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const hm = (min) => (min ? `${Math.floor(min / 60)}時間${String(min % 60).padStart(2, '0')}分` : '-');
+const ROLE_LABELS = { employee: '一般社員', contractor: '委託職員', partner: '協力会社', admin: '管理者' };
+const jstDate = (ts) => new Date(new Date(ts).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+const jstTime = (ts) => new Date(new Date(ts).getTime() + 9 * 3600 * 1000).toISOString().slice(11, 16);
+const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
+const weekdayOf = (dateKey) => WEEK[new Date(`${dateKey}T00:00:00Z`).getUTCDay()];
+const mdLabel = (dateKey) => `${Number(dateKey.slice(5, 7))}/${Number(dateKey.slice(8, 10))}(${weekdayOf(dateKey)})`;
+
+let employees = [];
+
+$('month').value = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 7);
+{
+  const q = new URLSearchParams(location.search);
+  if (/^\d{4}-\d{2}$/.test(q.get('month') || '')) $('month').value = q.get('month');
+}
+
+function shiftMonth(delta) {
+  const [y, m] = $('month').value.split('-').map(Number);
+  if (!y || !m) return;
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  $('month').value = d.toISOString().slice(0, 7);
+  load();
+}
+
+function syncUrl() {
+  if ($('viewMode').value === 'division') {
+    try { history.replaceState(null, '', `?view=division&month=${encodeURIComponent($('month').value)}&division=${encodeURIComponent($('divSelect').value)}`); } catch (e) { /* 表示には影響しない */ }
+    return;
+  }
+  const id = $('empSelect').value;
+  const q = id ? `?id=${encodeURIComponent(id)}&month=${encodeURIComponent($('month').value)}` : location.pathname;
+  try { history.replaceState(null, '', q); } catch (e) { /* URLを更新できなくても表示には影響しない */ }
+}
+
+function render(data) {
+  const s = data.summary;
+  const e = data.employee;
+  $('whoName').textContent = `${e.name}(${e.employee_code})`;
+  $('whoMeta').textContent = [ROLE_LABELS[e.role] || e.role, e.division || '事業部未設定', e.active ? '' : '無効'].filter(Boolean).join(' ・ ');
+  $('slipLink').href = `/payroll.html`;
+  const boxes = [
+    ['出勤日数', `${s.work_days}日`], ['総勤務時間', hm(s.total_minutes)], ['時間外', hm(s.overtime_minutes)],
+    ['深夜', hm(s.night_minutes)], ['休日', hm(s.holiday_minutes)],
+  ];
+  $('stats').innerHTML = boxes.map(([label, value]) => `<div class="stat-box"><div class="num">${value}</div><div class="label">${label}</div></div>`).join('');
+  $('incompleteNote').innerHTML = s.incomplete
+    ? '<div class="error-msg" style="margin-bottom:14px;">退勤が打刻されていない出勤があります。その勤務は勤務時間に含まれていません。打刻明細で確認し、「勤怠ログ」で修正してください。</div>'
+    : '';
+
+  // 日別の事業部・入力方法は、その日の打刻から集める
+  const byDate = new Map();
+  for (const l of data.logs) {
+    const k = jstDate(l.timestamp);
+    if (!byDate.has(k)) byDate.set(k, { divisions: new Set(), sites: new Set(), methods: new Set() });
+    const g = byDate.get(k);
+    if (l.note) g.sites.add(l.note);
+    if (l.site_division) g.divisions.add(l.site_division);
+    if (l.input_method_label) g.methods.add(l.input_method_label);
+  }
+
+  $('dayBody').innerHTML = data.days.length ? data.days.map((d) => {
+    const g = byDate.get(d.date) || { divisions: new Set(), sites: new Set(), methods: new Set() };
+    return `<tr class="${d.weekday === '日' ? 'sunday' : ''}">
+      <td>${mdLabel(d.date)}</td>
+      <td class="num">${esc(d.clock_in) || '-'}</td>
+      <td class="num">${esc(d.clock_out) || '-'}</td>
+      <td class="num">${d.break_minutes ? hm(d.break_minutes) : '-'}</td>
+      <td class="num"><strong>${hm(d.worked_minutes)}</strong></td>
+      <td class="num">${hm(d.overtime_minutes)}</td>
+      <td class="num">${hm(d.night_minutes)}</td>
+      <td class="num">${hm(d.holiday_minutes)}</td>
+      <td class="wrap">${g.divisions.size ? [...g.divisions].map(esc).join('、') : '<span class="text-muted">-</span>'}</td>
+      <td class="wrap">${g.sites.size ? [...g.sites].map(esc).join('、') : '<span class="text-muted">-</span>'}</td>
+      <td>${g.methods.size ? [...g.methods].map(esc).join('、') : '<span class="text-muted">-</span>'}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="11" class="att-empty">この月の勤務の記録はありません。</td></tr>';
+
+  $('logBody').innerHTML = data.logs.length ? data.logs.map((l) => `<tr>
+      <td>${mdLabel(jstDate(l.timestamp))}</td>
+      <td class="num">${jstTime(l.timestamp)}</td>
+      <td><span class="badge ${esc(l.type)}">${esc(l.label)}</span></td>
+      <td class="wrap">${l.site_division ? esc(l.site_division) : '<span class="text-muted">-</span>'}</td>
+      <td class="wrap">${l.note ? esc(l.note) : '<span class="text-muted">-</span>'}</td>
+      <td class="wrap">${l.remarks ? esc(l.remarks) : '<span class="text-muted">-</span>'}</td>
+      <td>${esc(l.input_method_label)}</td>
+    </tr>`).join('') : '<tr><td colspan="7" class="att-empty">この月の打刻はありません。</td></tr>';
+
+  $('result').hidden = false;
+}
+
+function renderDivision(data) {
+  $('divTotalBody').innerHTML = data.totals_by_division.length ? data.totals_by_division.map((g) => `<tr>
+      <td>${g.division ? esc(g.division) : '<span class="text-muted">未設定</span>'}</td>
+      <td class="num">${g.people}人</td><td class="num">${g.days}日</td>
+      <td class="num"><strong>${hm(g.total_minutes)}</strong></td>
+      <td class="num">${hm(g.overtime_minutes)}</td><td class="num">${hm(g.night_minutes)}</td><td class="num">${hm(g.holiday_minutes)}</td>
+    </tr>`).join('') : '<tr><td colspan="7" class="att-empty">この月の勤務の記録はありません。</td></tr>';
+  $('divDetailTitle').textContent = `日別の一覧(${$('divSelect').value || 'すべての事業部'})`;
+  $('divBody').innerHTML = data.rows.length ? data.rows.map((r) => `<tr class="${r.weekday === '日' ? 'sunday' : ''}">
+      <td>${mdLabel(r.date)}</td>
+      <td class="wrap">${esc(r.name)}<span class="text-muted">(${esc(r.employee_code)})</span></td>
+      <td class="wrap">${r.division ? esc(r.division) : '<span class="text-muted">-</span>'}</td>
+      <td class="wrap">${r.site ? esc(r.site) : '<span class="text-muted">-</span>'}</td>
+      <td class="num">${esc(r.clock_in) || '-'}</td><td class="num">${esc(r.clock_out) || '-'}</td>
+      <td class="num">${r.break_minutes ? hm(r.break_minutes) : '-'}</td>
+      <td class="num"><strong>${hm(r.worked_minutes)}</strong></td>
+      <td class="num">${hm(r.overtime_minutes)}</td><td class="num">${hm(r.night_minutes)}</td><td class="num">${hm(r.holiday_minutes)}</td>
+    </tr>`).join('') : '<tr><td colspan="11" class="att-empty">該当する勤務はありません。</td></tr>';
+  $('divResult').hidden = false;
+}
+
+function setView() {
+  const byDiv = $('viewMode').value === 'division';
+  $('empField').hidden = byDiv;
+  $('divField').hidden = !byDiv;
+  load();
+}
+
+async function load() {
+  $('pageMsg').innerHTML = '';
+  if ($('viewMode').value === 'division') {
+    $('result').hidden = true;
+    syncUrl();
+    try {
+      renderDivision(await Api.request(`/admin/attendance/by-division?month=${encodeURIComponent($('month').value)}&division=${encodeURIComponent($('divSelect').value)}`));
+    } catch (err) {
+      $('divResult').hidden = true;
+      $('pageMsg').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+    }
+    return;
+  }
+  $('divResult').hidden = true;
+  const id = $('empSelect').value;
+  syncUrl();
+  if (!id) {
+    $('result').hidden = true;
+    $('pageMsg').innerHTML = '<div class="card att-empty">社員を選ぶと、その社員の勤怠を表示します。</div>';
+    return;
+  }
+  try {
+    render(await Api.request(`/admin/employees/${encodeURIComponent(id)}/attendance?month=${encodeURIComponent($('month').value)}`));
+  } catch (err) {
+    $('result').hidden = true;
+    $('pageMsg').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+  }
+}
+
+$('empSelect').addEventListener('change', load);
+$('viewMode').addEventListener('change', setView);
+$('divSelect').addEventListener('change', load);
+$('month').addEventListener('change', load);
+$('prevMonth').addEventListener('click', () => shiftMonth(-1));
+$('nextMonth').addEventListener('click', () => shiftMonth(1));
+
+(async () => {
+  try {
+    employees = (await Api.request('/admin/employees')).employees;
+    $('empSelect').innerHTML = '<option value="">社員を選んでください</option>' +
+      employees.map((e) => `<option value="${e.id}">${esc(e.employee_code)} ${esc(e.name)}${e.active ? '' : '(無効)'}</option>`).join('');
+    const divs = (await Api.request('/admin/divisions')).divisions;
+    $('divSelect').innerHTML = '<option value="">すべての事業部</option>' + divs.map((d) => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
+    const q = new URLSearchParams(location.search);
+    const wanted = q.get('id');
+    if (wanted && employees.some((e) => String(e.id) === wanted)) $('empSelect').value = wanted;
+    if (q.get('view') === 'division') {
+      $('viewMode').value = 'division';
+      $('empField').hidden = true;
+      $('divField').hidden = false;
+      if (divs.some((d) => d.name === q.get('division'))) $('divSelect').value = q.get('division');
+    }
+  } catch (err) {
+    $('pageMsg').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+    return;
+  }
+  load();
+})();
+</script>
+</body>
+</html>

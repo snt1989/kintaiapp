@@ -999,6 +999,83 @@ function loadPayroll() {
     return ok({ employee: listedEmployee(e) });
   });
 
+  function buildDivisionAttendance(emps, logsOf, month, division) {
+    var jstDay = function (ts) { return new Date(new Date(ts).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10); };
+    var rows = [];
+    var incomplete = 0;
+    emps.forEach(function (emp) {
+      var around = logsOf(emp.id);
+      if (!around.length) return;
+      var byDay = {};
+      around.forEach(function (l) {
+        var k = jstDay(l.timestamp);
+        (byDay[k] = byDay[k] || []).push(l);
+      });
+      var summary = payroll.calculateEmployee(around, 0, undefined, month);
+      incomplete += summary.incomplete ? 1 : 0;
+      payroll.dailyBreakdown(around, month).forEach(function (d) {
+        var dayLogs = (byDay[d.date] || []).slice().sort(function (a, b) { return (a.type === 'clock_in' ? 0 : 1) - (b.type === 'clock_in' ? 0 : 1); });
+        var withDiv = dayLogs.filter(function (l) { return l.site_division; })[0];
+        var withSite = dayLogs.filter(function (l) { return l.note; })[0];
+        var div = withDiv ? withDiv.site_division : (emp.division || '');
+        if (division && div !== division) return;
+        rows.push({
+          date: d.date, weekday: d.weekday, employee_id: emp.id, employee_code: emp.employee_code, name: emp.name,
+          division: div, site: withSite ? withSite.note : '',
+          clock_in: d.clock_in, clock_out: d.clock_out, break_minutes: d.break_minutes, worked_minutes: d.worked_minutes,
+          overtime_minutes: d.overtime_minutes, night_minutes: d.night_minutes, holiday_minutes: d.holiday_minutes,
+        });
+      });
+    });
+    rows.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.employee_code < b.employee_code ? -1 : a.employee_code > b.employee_code ? 1 : 0); });
+    var groups = {};
+    rows.forEach(function (r) {
+      var g = groups[r.division] || (groups[r.division] = { division: r.division, people: {}, days: 0, total_minutes: 0, overtime_minutes: 0, night_minutes: 0, holiday_minutes: 0 });
+      g.people[r.employee_id] = true;
+      g.days += 1;
+      g.total_minutes += r.worked_minutes; g.overtime_minutes += r.overtime_minutes; g.night_minutes += r.night_minutes; g.holiday_minutes += r.holiday_minutes;
+    });
+    var totals = Object.keys(groups).map(function (k) { var g = groups[k]; g.people = Object.keys(g.people).length; return g; })
+      .sort(function (a, b) { return a.division < b.division ? -1 : a.division > b.division ? 1 : 0; });
+    return { rows: rows, totals_by_division: totals };
+  }
+
+  route('GET', '/admin/attendance/by-division', ADMIN, function (ctx) {
+    var month = ctx.query.month || new Date(Date.now() + JST_OFFSET_MS).toISOString().slice(0, 7);
+    var range = payroll.monthRangeIso(month);
+    if (!range) return fail(400, '対象月の形式が正しくありません(例: 2026-09)。');
+    var division = String(ctx.query.division || '');
+    var emps = state.employees.slice().sort(function (a, b) { return a.employee_code < b.employee_code ? -1 : a.employee_code > b.employee_code ? 1 : 0; });
+    var result = buildDivisionAttendance(emps, function (id) {
+      return logsAround(range, id).slice().sort(function (a, b) { return a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : a.id - b.id; });
+    }, month, division);
+    return ok({ month: month, division: division, rows: result.rows, totals_by_division: result.totals_by_division });
+  });
+
+  // ---- /api/admin: 個別の勤怠データ(社員1人・1か月分) ----
+  route('GET', '/admin/employees/:id/attendance', ADMIN, function (ctx) {
+    var month = ctx.query.month || new Date(Date.now() + JST_OFFSET_MS).toISOString().slice(0, 7);
+    var range = payroll.monthRangeIso(month);
+    if (!range) return fail(400, '対象月の形式が正しくありません(例: 2026-09)。');
+    var emp = employeeById(ctx.params.id);
+    if (!emp) return fail(404, '社員が見つかりません。');
+    var around = logsAround(range, emp.id).slice().sort(function (a, b) { return a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : a.id - b.id; });
+    var summary = payroll.calculateEmployee(around, 0, undefined, month);
+    var logs = around.filter(function (l) { return l.timestamp >= range.startIso && l.timestamp < range.endIso; }).map(function (l) {
+      return Object.assign({}, l, { label: TYPE_LABELS[l.type], input_method_label: INPUT_METHOD_LABELS[l.input_method] || INPUT_METHOD_LABELS.clock });
+    });
+    return ok({
+      month: month,
+      employee: { id: emp.id, employee_code: emp.employee_code, name: emp.name, role: emp.role, active: emp.active, division: emp.division },
+      summary: {
+        work_days: summary.work_days, total_minutes: summary.total_minutes, overtime_minutes: summary.overtime_minutes,
+        night_minutes: summary.night_minutes, holiday_minutes: summary.holiday_minutes, incomplete: summary.incomplete,
+      },
+      days: payroll.dailyBreakdown(around, month),
+      logs: logs,
+    });
+  });
+
   // ---- /api/admin: 勤怠ログ ----
 
   function filteredAdminLogs(query) {

@@ -19,10 +19,11 @@
   </header>
 
   <nav class="admin-subnav">
-    <a href="/admin.html">勤怠ログ</a>
+    <a href="/employee-attendance.html">個別勤怠</a>
+    <a href="/payroll.html">給与計算</a>
     <a href="/employees.html" class="active">社員管理</a>
     <a href="/master.html">マスタ管理</a>
-    <a href="/payroll.html">給与計算</a>
+    <a href="/admin.html">勤怠ログ</a>
   </nav>
 
   <main>
@@ -271,7 +272,7 @@ function renderTable() {
         <td><span class="role-tag ${e.role}">${ROLE_LABELS[e.role] || e.role}</span></td>
         <td>${e.active ? '<span class="text-muted">有効</span>' : '<span class="inactive-tag">無効</span>'}</td>
         <td>${created}</td>
-        <td><button class="link-btn" data-edit="${e.id}">編集</button></td>
+        <td><button class="link-btn" data-edit="${e.id}">編集</button> <a class="link-btn" href="/employee-attendance.html?id=${e.id}" style="text-decoration:none;">勤怠</a></td>
       </tr>
     `;
   }).join('');
