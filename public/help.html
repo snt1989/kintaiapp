@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>使い方 Q&A | 勤怠管理システム</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  .qa-search { margin-bottom: 4px; }
+  .qa-group { margin-top: 22px; font-size: 15px; font-weight: 700; }
+  .qa-group:first-of-type { margin-top: 0; }
+  details.qa { border: 1px solid var(--color-border, #e2e5ea); border-radius: 8px; margin-top: 8px; background: var(--color-surface, #fff); }
+  details.qa > summary { cursor: pointer; padding: 12px 14px; font-weight: 600; font-size: 14px; list-style: none; display: flex; gap: 8px; }
+  details.qa > summary::-webkit-details-marker { display: none; }
+  details.qa > summary::before { content: "Q"; color: var(--color-primary, #2563eb); font-weight: 700; }
+  details.qa[open] > summary { border-bottom: 1px solid var(--color-border, #e2e5ea); }
+  .qa-a { padding: 12px 14px 12px 36px; font-size: 14px; line-height: 1.8; }
+  .qa-a p { margin: 0 0 8px; }
+  .qa-a ul, .qa-a ol { margin: 4px 0 8px; padding-left: 20px; }
+  .qa-none { padding: 24px 8px; text-align: center; color: var(--color-text-muted); }
+  .qa-back { display: inline-block; margin-bottom: 12px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1>使い方 Q&amp;A</h1>
+    <div class="user-info">
+      <a class="help-link" href="#" id="backLink">戻る</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="card">
+      <label for="qaSearch">キーワードで探す</label>
+      <input type="search" id="qaSearch" class="qa-search" placeholder="例: 退勤、所得税、パスワード" autocomplete="off">
+    </div>
+
+    <div class="card" id="qaList">
+      <h2 class="qa-group">打刻・勤務の入力(全員)</h2>
+
+      <details class="qa"><summary>出勤・退勤はどうやって記録しますか?</summary><div class="qa-a">
+        <p>「打刻入力」の画面で、現場の該当事業部を選び、「出勤」を押します。仕事が終わったら「退勤」を押します。休憩を取る場合は、休憩の開始と終了も押してください。</p>
+        <ul><li>現場の該当事業部は必須です。</li><li>現場名と備考は任意です。入力すると、管理者の画面にも表示されます。</li></ul>
+      </div></details>
+
+      <details class="qa"><summary>打刻を忘れました。後から入力できますか?</summary><div class="qa-a">
+        <p>「直接入力」の画面で、日付・出勤・退勤の時刻を入力して登録できます。休憩があれば、開始と終了の時刻も入力します。</p>
+        <p>直接入力で登録できるのは、出勤と退勤が同じ日の勤務です。日をまたぐ勤務は、管理者に修正を頼んでください。</p>
+      </div></details>
+
+      <details class="qa"><summary>退勤の打刻を忘れたままにするとどうなりますか?</summary><div class="qa-a">
+        <p>退勤が記録されていない勤務は、勤務時間と給与の計算に含まれません。管理者の画面には「退勤漏れ」と表示されます。気づいたら、管理者に連絡して打刻を直してもらってください。</p>
+      </div></details>
+
+      <details class="qa"><summary>自分の打刻を確認するには?</summary><div class="qa-a">
+        <p>「打刻履歴」の画面で、日ごとの勤務時間と、打刻の一覧(日付・時刻・種別・事業部・現場名・備考)を確認できます。間違いを見つけたら、管理者に修正を頼んでください。</p>
+      </div></details>
+
+      <details class="qa"><summary>パスワードを忘れた、変更したい</summary><div class="qa-a">
+        <p>管理者に連絡してください。管理者が「社員情報の編集」で新しいパスワードを設定します。現在のパスワードを画面で確認することはできません。</p>
+      </div></details>
+
+      <h2 class="qa-group">勤怠の確認と修正(管理者)</h2>
+
+      <details class="qa"><summary>社員ひとりの勤怠を月ごとに見たい</summary><div class="qa-a">
+        <p>「個別勤怠」のタブを開き、社員と対象月を選びます。出勤日数・総勤務時間・時間外・深夜・休日の合計と、日別の勤務、打刻の明細が表示されます。◀ ▶ で前後の月に切り替えられます。</p>
+        <p>日別の表には、事業部・現場名・備考・入力方法も表示します。</p>
+      </div></details>
+
+      <details class="qa"><summary>事業部ごとの勤怠を一覧で見たい</summary><div class="qa-a">
+        <p>「個別勤怠」の「表示」を「事業部別」に切り替えます。全社員の勤務が、事業部ごとの合計と日別の一覧で表示されます。事業部を選ぶと絞り込めます。</p>
+        <p>事業部と現場名は、その日の打刻(出勤を優先)に入力されたものです。1日に複数の事業部で打刻した場合は、出勤の打刻の事業部にまとめます。</p>
+      </div></details>
+
+      <details class="qa"><summary>打刻の時刻を修正したい</summary><div class="qa-a">
+        <p>「勤怠ログ」のタブで、対象の打刻を探して時刻を直します。「個別勤怠」は表示専用です。</p>
+      </div></details>
+
+      <details class="qa"><summary>時間外・深夜・休日は、どう数えますか?</summary><div class="qa-a">
+        <ul><li>時間外: 1日8時間を超えた分(日曜は休日として数えます)</li><li>深夜: 22時から翌5時までの勤務</li><li>休日: 日曜の勤務</li></ul>
+        <p>勤務時間は休憩を除き、日本時間で日ごとに集計します。</p>
+      </div></details>
+
+      <h2 class="qa-group">給与計算(管理者)</h2>
+
+      <details class="qa"><summary>給与明細を作るには?</summary><div class="qa-a">
+        <ol><li>「給与計算」のタブで対象月を選びます。</li><li>社員ごとの時給を入力します(未設定だと支給額は0円です)。</li><li>社員の行の「明細書」を開くと、給与明細書が表示され、印刷できます。</li></ol>
+        <p>通勤手当・その他手当・控除は、「編集する」から明細ごとに入力します。</p>
+      </div></details>
+
+      <details class="qa"><summary>所得税は自動で計算されますか?</summary><div class="qa-a">
+        <p>甲欄の社員は、自動で計算します。国税庁の給与所得の源泉徴収税額表(月額表)の算式を使い、支給額から社会保険料と非課税の通勤手当を除いた金額を基準にします。扶養親族等の数も反映します。</p>
+        <ul><li>明細の編集画面で所得税を空欄(「自動計算」にチェック)にすると、自動計算の金額を使います。</li><li>金額を入力すると、その金額を優先します(「手入力」と表示されます)。</li><li>乙欄の社員は自動計算の対象外です。所得税の金額を手入力してください。</li></ul>
+      </div></details>
+
+      <details class="qa"><summary>税区分や扶養の人数はどこで変えますか?</summary><div class="qa-a">
+        <p>「給与計算」の一覧の「税区分・扶養」の欄、または「社員情報を編集」の画面で変更します。扶養親族等の数には、控除対象配偶者も含めます。</p>
+      </div></details>
+
+      <details class="qa"><summary>社会保険・労働保険の加入は、保険料に反映されますか?</summary><div class="qa-a">
+        <p>加入状況は表示と注意のためのものです。保険料は自動では計算されないので、明細の編集画面で月ごとに入力します。未加入の社員に保険料を入力すると、注意が表示されます。</p>
+      </div></details>
+
+      <h2 class="qa-group">社員・マスタの管理(管理者)</h2>
+
+      <details class="qa"><summary>社員を追加・編集・削除するには?</summary><div class="qa-a">
+        <p>「社員管理」のタブで、「＋ 社員を追加」から登録します。一覧の「編集」で、社員番号・氏名・事業部・権限・状態を変更できます。状態と事業部は、複数の社員を選んで一括で変更できます。</p>
+        <p>時給・税区分・扶養・社会保険と労働保険の加入は、「給与計算」の画面の「社員情報を編集」で変更します。</p>
+      </div></details>
+
+      <details class="qa"><summary>事業部を追加したい</summary><div class="qa-a">
+        <p>「マスタ管理」のタブで、事業部を追加・編集します。追加した事業部は、打刻入力の選択肢や、個別勤怠の絞り込みに表示されます。</p>
+      </div></details>
+
+      <details class="qa"><summary>退職した社員はどうしますか?</summary><div class="qa-a">
+        <p>状態を「無効」にすると、ログインできなくなります。打刻の履歴は残るので、過去の給与計算にも使えます。削除は元に戻せません。</p>
+      </div></details>
+
+      <div class="qa-none" id="qaNone" hidden>該当する項目がありません。別のキーワードで探してください。</div>
+    </div>
+  </main>
+</div>
+
+<script>
+(function () {
+  var back = document.getElementById('backLink');
+  var token = null;
+  try { token = localStorage.getItem('sanoh_attendance_token'); } catch (e) { /* 取得できない場合はログイン画面へ */ }
+  var emp = null;
+  try { emp = JSON.parse(localStorage.getItem('sanoh_attendance_employee') || 'null'); } catch (e) { /* 同上 */ }
+  back.href = token && emp ? (emp.role === 'admin' ? '/admin.html' : '/clock.html') : '/index.html';
+  if (history.length > 1 && document.referrer) { back.addEventListener('click', function (ev) { ev.preventDefault(); history.back(); }); }
+
+  var items = Array.prototype.slice.call(document.querySelectorAll('details.qa'));
+  var groups = Array.prototype.slice.call(document.querySelectorAll('.qa-group'));
+  document.getElementById('qaSearch').addEventListener('input', function (ev) {
+    var q = ev.target.value.trim().toLowerCase();
+    var shown = 0;
+    items.forEach(function (d) {
+      var hit = !q || d.textContent.toLowerCase().indexOf(q) !== -1;
+      d.hidden = !hit;
+      if (hit) shown += 1;
+      d.open = !!q && hit;
+    });
+    groups.forEach(function (g) {
+      var n = g.nextElementSibling, any = false;
+      while (n && n.classList.contains('qa')) { if (!n.hidden) any = true; n = n.nextElementSibling; }
+      g.hidden = !any;
+    });
+    document.getElementById('qaNone').hidden = shown > 0;
+  });
+})();
+</script>
+</body>
+</html>

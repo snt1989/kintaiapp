@@ -60,6 +60,14 @@ header.topbar .user-info {
   text-align: right;
 }
 
+.help-link {
+  color: #fff;
+  font-size: 13px;
+  text-decoration: underline;
+  margin-right: 8px;
+  opacity: 0.95;
+}
+
 .logout-btn {
   background: rgba(255,255,255,0.15);
   border: none;
