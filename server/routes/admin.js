@@ -582,11 +582,12 @@ function buildDivisionAttendance(emps, logsOf, month, division) {
       var dayLogs = (byDay[d.date] || []).slice().sort(function (a, b) { return (a.type === 'clock_in' ? 0 : 1) - (b.type === 'clock_in' ? 0 : 1); });
       var withDiv = dayLogs.filter(function (l) { return l.site_division; })[0];
       var withSite = dayLogs.filter(function (l) { return l.note; })[0];
+      var remarks = dayLogs.map(function (l) { return l.remarks; }).filter(function (r, i, a) { return r && a.indexOf(r) === i; }).join('、');
       var div = withDiv ? withDiv.site_division : (emp.division || '');
       if (division && div !== division) return;
       rows.push({
         date: d.date, weekday: d.weekday, employee_id: emp.id, employee_code: emp.employee_code, name: emp.name,
-        division: div, site: withSite ? withSite.note : '',
+        division: div, site: withSite ? withSite.note : '', remarks: remarks,
         clock_in: d.clock_in, clock_out: d.clock_out, break_minutes: d.break_minutes, worked_minutes: d.worked_minutes,
         overtime_minutes: d.overtime_minutes, night_minutes: d.night_minutes, holiday_minutes: d.holiday_minutes,
       });
@@ -617,7 +618,7 @@ router.get('/attendance/by-division', async (req, res, next) => {
     const from = new Date(new Date(range.startIso).getTime() - 24 * 3600 * 1000).toISOString();
     const to = new Date(new Date(range.endIso).getTime() + 24 * 3600 * 1000).toISOString();
     const all = await db.all(
-      'SELECT id, employee_id, type, timestamp, note, site_division FROM attendance_logs WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp, id',
+      'SELECT id, employee_id, type, timestamp, note, remarks, site_division FROM attendance_logs WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp, id',
       [from, to]
     );
     const byEmp = new Map();

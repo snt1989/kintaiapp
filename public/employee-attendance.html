@@ -93,7 +93,7 @@
         <div class="table-wrap">
           <table class="att-table">
             <thead>
-              <tr><th>日付</th><th class="num">出勤</th><th class="num">退勤</th><th class="num">休憩</th><th class="num">勤務時間</th><th class="num">時間外</th><th class="num">深夜</th><th class="num">休日</th><th>事業部</th><th>現場名</th><th>入力方法</th></tr>
+              <tr><th>日付</th><th class="num">出勤</th><th class="num">退勤</th><th class="num">休憩</th><th class="num">勤務時間</th><th class="num">時間外</th><th class="num">深夜</th><th class="num">休日</th><th>事業部</th><th>現場名</th><th>備考</th><th>入力方法</th></tr>
             </thead>
             <tbody id="dayBody"></tbody>
           </table>
@@ -131,7 +131,7 @@
         <div class="section-title" id="divDetailTitle">日別の一覧</div>
         <div class="table-wrap">
           <table class="att-table">
-            <thead><tr><th>日付</th><th>社員</th><th>事業部</th><th>現場名</th><th class="num">出勤</th><th class="num">退勤</th><th class="num">休憩</th><th class="num">勤務時間</th><th class="num">時間外</th><th class="num">深夜</th><th class="num">休日</th></tr></thead>
+            <thead><tr><th>日付</th><th>社員</th><th>事業部</th><th>現場名</th><th>備考</th><th class="num">出勤</th><th class="num">退勤</th><th class="num">休憩</th><th class="num">勤務時間</th><th class="num">時間外</th><th class="num">深夜</th><th class="num">休日</th></tr></thead>
             <tbody id="divBody"></tbody>
           </table>
         </div>
@@ -207,15 +207,16 @@ function render(data) {
   const byDate = new Map();
   for (const l of data.logs) {
     const k = jstDate(l.timestamp);
-    if (!byDate.has(k)) byDate.set(k, { divisions: new Set(), sites: new Set(), methods: new Set() });
+    if (!byDate.has(k)) byDate.set(k, { divisions: new Set(), sites: new Set(), remarks: new Set(), methods: new Set() });
     const g = byDate.get(k);
     if (l.note) g.sites.add(l.note);
+    if (l.remarks) g.remarks.add(l.remarks);
     if (l.site_division) g.divisions.add(l.site_division);
     if (l.input_method_label) g.methods.add(l.input_method_label);
   }
 
   $('dayBody').innerHTML = data.days.length ? data.days.map((d) => {
-    const g = byDate.get(d.date) || { divisions: new Set(), sites: new Set(), methods: new Set() };
+    const g = byDate.get(d.date) || { divisions: new Set(), sites: new Set(), remarks: new Set(), methods: new Set() };
     return `<tr class="${d.weekday === '日' ? 'sunday' : ''}">
       <td>${mdLabel(d.date)}</td>
       <td class="num">${esc(d.clock_in) || '-'}</td>
@@ -227,9 +228,10 @@ function render(data) {
       <td class="num">${hm(d.holiday_minutes)}</td>
       <td class="wrap">${g.divisions.size ? [...g.divisions].map(esc).join('、') : '<span class="text-muted">-</span>'}</td>
       <td class="wrap">${g.sites.size ? [...g.sites].map(esc).join('、') : '<span class="text-muted">-</span>'}</td>
+      <td class="wrap">${g.remarks.size ? [...g.remarks].map(esc).join('、') : '<span class="text-muted">-</span>'}</td>
       <td>${g.methods.size ? [...g.methods].map(esc).join('、') : '<span class="text-muted">-</span>'}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="11" class="att-empty">この月の勤務の記録はありません。</td></tr>';
+  }).join('') : '<tr><td colspan="12" class="att-empty">この月の勤務の記録はありません。</td></tr>';
 
   $('logBody').innerHTML = data.logs.length ? data.logs.map((l) => `<tr>
       <td>${mdLabel(jstDate(l.timestamp))}</td>
@@ -257,11 +259,12 @@ function renderDivision(data) {
       <td class="wrap">${esc(r.name)}<span class="text-muted">(${esc(r.employee_code)})</span></td>
       <td class="wrap">${r.division ? esc(r.division) : '<span class="text-muted">-</span>'}</td>
       <td class="wrap">${r.site ? esc(r.site) : '<span class="text-muted">-</span>'}</td>
+      <td class="wrap">${r.remarks ? esc(r.remarks) : '<span class="text-muted">-</span>'}</td>
       <td class="num">${esc(r.clock_in) || '-'}</td><td class="num">${esc(r.clock_out) || '-'}</td>
       <td class="num">${r.break_minutes ? hm(r.break_minutes) : '-'}</td>
       <td class="num"><strong>${hm(r.worked_minutes)}</strong></td>
       <td class="num">${hm(r.overtime_minutes)}</td><td class="num">${hm(r.night_minutes)}</td><td class="num">${hm(r.holiday_minutes)}</td>
-    </tr>`).join('') : '<tr><td colspan="11" class="att-empty">該当する勤務はありません。</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="12" class="att-empty">該当する勤務はありません。</td></tr>';
   $('divResult').hidden = false;
 }
 
