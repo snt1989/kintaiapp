@@ -25,7 +25,22 @@
   .att-table td, .att-table th { white-space: nowrap; }
   .att-table td.num, .att-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .att-table td.wrap { white-space: normal; min-width: 120px; }
-  .att-table tr.sunday td:first-child { color: var(--color-danger); }
+  .att-table td.sun { color: var(--color-danger); }
+  .grid-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; position: relative; }
+  .grid-tools .grid-filter { flex: 1 1 180px; min-width: 0; max-width: 280px; margin: 0; padding: 7px 10px; font-size: 13px; }
+  .grid-tools .btn { margin: 0; width: auto; padding: 7px 12px; font-size: 13px; }
+  .grid-count { font-size: 12px; color: var(--color-text-muted); margin-left: auto; }
+  .grid-panel { position: absolute; top: 100%; left: 0; z-index: 20; margin-top: 4px; min-width: 250px; max-width: 100%; background: var(--color-surface, #fff); border: 1px solid var(--color-border, #e2e5ea); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 10px; }
+  .grid-panel[hidden] { display: none; }
+  .grid-panel ul { list-style: none; margin: 0 0 8px; padding: 0; max-height: 300px; overflow: auto; }
+  .grid-panel li { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 13px; }
+  .grid-panel li label { flex: 1; display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 400; cursor: pointer; }
+  .grid-panel li input[type=checkbox] { width: auto; margin: 0; }
+  .grid-panel .mv { border: 1px solid var(--color-border, #e2e5ea); background: transparent; color: inherit; border-radius: 6px; width: 28px; height: 26px; cursor: pointer; font-size: 12px; padding: 0; }
+  .grid-panel .mv:disabled { opacity: .35; cursor: default; }
+  .att-table th.sortable { cursor: pointer; user-select: none; }
+  .att-table th.sortable:hover { text-decoration: underline; }
+  .att-table th .ind { font-size: 10px; margin-left: 3px; opacity: .8; }
   .att-flag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #fef3c7; color: #92400e; }
   .att-empty { padding: 28px 8px; text-align: center; color: var(--color-text-muted); }
 </style>
@@ -102,11 +117,10 @@
         <div id="incompleteNote"></div>
 
         <div class="section-title">日別の勤務</div>
+        <div class="grid-tools" id="dayTools"></div>
         <div class="table-wrap">
           <table class="att-table">
-            <thead>
-              <tr><th>日付</th><th class="num">出勤</th><th class="num">退勤</th><th class="num">休憩</th><th class="num">勤務時間</th><th class="num">時間外</th><th class="num">深夜</th><th class="num">休日</th><th>事業部</th><th>現場名</th><th>備考</th><th>入力方法</th></tr>
-            </thead>
+            <thead id="dayHead"></thead>
             <tbody id="dayBody"></tbody>
           </table>
         </div>
@@ -141,9 +155,10 @@
       </div>
       <div class="card">
         <div class="section-title" id="divDetailTitle">日別の一覧</div>
+        <div class="grid-tools" id="divTools"></div>
         <div class="table-wrap">
           <table class="att-table">
-            <thead><tr><th>日付</th><th>社員</th><th>区分</th><th>事業部</th><th>現場名</th><th>備考</th><th class="num">出勤</th><th class="num">退勤</th><th class="num">休憩</th><th class="num">勤務時間</th><th class="num">時間外</th><th class="num">深夜</th><th class="num">休日</th></tr></thead>
+            <thead id="divHead"></thead>
             <tbody id="divBody"></tbody>
           </table>
         </div>
@@ -175,6 +190,147 @@ const weekdayOf = (dateKey) => WEEK[new Date(`${dateKey}T00:00:00Z`).getUTCDay()
 const mdLabel = (dateKey) => `${Number(dateKey.slice(5, 7))}/${Number(dateKey.slice(8, 10))}(${weekdayOf(dateKey)})`;
 
 let employees = [];
+
+// ---- 日別の一覧の並び替え・列の表示/非表示・絞り込み ----
+// 見出しのクリックで並び替え(昇順→降順→元の順)。列の設定で、列の表示/非表示と左右の入れ替えができる。
+// 列の設定は、このブラウザに保存する。
+function makeGrid({ tools, head, body, cols, storeKey, rowClass, emptyText }) {
+  const byKey = Object.fromEntries(cols.map((c) => [c.key, c]));
+  const st = { order: cols.map((c) => c.key), hidden: [], sort: null, q: '' };
+  try {
+    const saved = JSON.parse(localStorage.getItem(storeKey) || 'null');
+    if (saved) {
+      const order = (saved.order || []).filter((k) => byKey[k]);
+      cols.forEach((c) => { if (!order.includes(c.key)) order.push(c.key); });
+      st.order = order;
+      st.hidden = (saved.hidden || []).filter((k) => byKey[k]);
+      if (saved.sort && byKey[saved.sort.key]) st.sort = { key: saved.sort.key, dir: saved.sort.dir === 'desc' ? 'desc' : 'asc' };
+    }
+  } catch (e) { /* 保存した設定を読めない場合は、初期の設定を使う */ }
+  const save = () => { try { localStorage.setItem(storeKey, JSON.stringify({ order: st.order, hidden: st.hidden, sort: st.sort })); } catch (e) { /* 保存できなくても表示には影響しない */ } };
+  let rows = [];
+
+  tools.innerHTML = '<input type="search" class="grid-filter" placeholder="この表を絞り込む" aria-label="この表を絞り込む" autocomplete="off">' +
+    '<button type="button" class="btn secondary small grid-cols-btn" aria-expanded="false">列の設定</button>' +
+    '<span class="grid-count"></span>' +
+    '<div class="grid-panel" hidden><ul></ul><button type="button" class="btn secondary small grid-reset">初期の設定に戻す</button></div>';
+  const filterEl = tools.querySelector('.grid-filter');
+  const btnEl = tools.querySelector('.grid-cols-btn');
+  const panel = tools.querySelector('.grid-panel');
+  const listEl = panel.querySelector('ul');
+  const countEl = tools.querySelector('.grid-count');
+
+  const visibleKeys = () => st.order.filter((k) => !st.hidden.includes(k));
+
+  function cmp(a, b, col, dir) {
+    const x = col.sort(a), y = col.sort(b);
+    const xe = x === null || x === undefined || x === '', ye = y === null || y === undefined || y === '';
+    if (xe && ye) return 0;
+    if (xe) return 1; // 空の値は、昇順でも降順でも最後に置く
+    if (ye) return -1;
+    const r = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'ja');
+    return dir === 'desc' ? -r : r;
+  }
+
+  function renderPanel() {
+    const vis = visibleKeys();
+    listEl.innerHTML = st.order.map((k, i) => {
+      const on = !st.hidden.includes(k);
+      return `<li><label><input type="checkbox" data-k="${k}" ${on ? 'checked' : ''} ${on && vis.length === 1 ? 'disabled' : ''}>${esc(byKey[k].label)}</label>` +
+        `<button type="button" class="mv" data-mv="-1" data-k="${k}" ${i === 0 ? 'disabled' : ''} aria-label="${esc(byKey[k].label)}を左へ">←</button>` +
+        `<button type="button" class="mv" data-mv="1" data-k="${k}" ${i === st.order.length - 1 ? 'disabled' : ''} aria-label="${esc(byKey[k].label)}を右へ">→</button></li>`;
+    }).join('');
+  }
+
+  function render() {
+    const vis = visibleKeys().map((k) => byKey[k]);
+    head.innerHTML = '<tr>' + vis.map((c) => {
+      const active = st.sort && st.sort.key === c.key;
+      const ind = active ? (st.sort.dir === 'asc' ? '▲' : '▼') : '';
+      return `<th class="sortable${c.num ? ' num' : ''}" data-k="${c.key}" tabindex="0" title="クリックで並び替え" aria-sort="${active ? (st.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}">${esc(c.label)}<span class="ind">${ind}</span></th>`;
+    }).join('') + '</tr>';
+    let list = rows.map((r, i) => ({ r, i }));
+    const q = st.q.trim().toLowerCase();
+    if (q) list = list.filter(({ r }) => vis.some((c) => String(c.text(r)).toLowerCase().includes(q)));
+    if (st.sort) {
+      const col = byKey[st.sort.key];
+      list.sort((a, b) => cmp(a.r, b.r, col, st.sort.dir) || a.i - b.i);
+    }
+    body.innerHTML = list.length ? list.map(({ r }) => `<tr class="${rowClass ? rowClass(r) : ''}">` +
+      vis.map((c) => `<td class="${[c.num ? 'num' : c.wrap ? 'wrap' : '', c.key === 'date' && r.weekday === '日' ? 'sun' : ''].filter(Boolean).join(' ')}">${c.cell(r)}</td>`).join('') + '</tr>').join('')
+      : `<tr><td colspan="${vis.length}" class="att-empty">${rows.length ? '該当する勤務はありません。' : emptyText}</td></tr>`;
+    countEl.textContent = rows.length ? `${list.length} / ${rows.length}件` : '';
+  }
+
+  head.addEventListener('click', (ev) => {
+    const th = ev.target.closest('th[data-k]');
+    if (!th) return;
+    const k = th.dataset.k;
+    if (!st.sort || st.sort.key !== k) st.sort = { key: k, dir: 'asc' };
+    else if (st.sort.dir === 'asc') st.sort = { key: k, dir: 'desc' };
+    else st.sort = null;
+    save(); render();
+  });
+  head.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { const th = ev.target.closest('th[data-k]'); if (th) { ev.preventDefault(); th.click(); } } });
+  filterEl.addEventListener('input', () => { st.q = filterEl.value; render(); });
+  btnEl.addEventListener('click', () => {
+    panel.hidden = !panel.hidden;
+    btnEl.setAttribute('aria-expanded', String(!panel.hidden));
+    if (!panel.hidden) renderPanel();
+  });
+  document.addEventListener('click', (ev) => { if (!panel.hidden && !tools.contains(ev.target)) { panel.hidden = true; btnEl.setAttribute('aria-expanded', 'false'); } });
+  listEl.addEventListener('change', (ev) => {
+    const k = ev.target.dataset.k;
+    if (!k) return;
+    st.hidden = ev.target.checked ? st.hidden.filter((x) => x !== k) : st.hidden.concat(k);
+    save(); renderPanel(); render();
+  });
+  listEl.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-mv]');
+    if (!b) return;
+    const dir = Number(b.dataset.mv);
+    const i = st.order.indexOf(b.dataset.k);
+    // 表示している列は、非表示の列を飛ばして隣の列と入れ替える
+    let j = i + dir;
+    if (!st.hidden.includes(b.dataset.k)) while (j >= 0 && j < st.order.length && st.hidden.includes(st.order[j])) j += dir;
+    if (i < 0 || j < 0 || j >= st.order.length) return;
+    [st.order[i], st.order[j]] = [st.order[j], st.order[i]];
+    save(); renderPanel(); render();
+  });
+  panel.querySelector('.grid-reset').addEventListener('click', () => {
+    st.order = cols.map((c) => c.key); st.hidden = []; st.sort = null; st.q = ''; filterEl.value = '';
+    save(); renderPanel(); render();
+  });
+
+  render();
+  return { setRows(r) { rows = r; render(); } };
+}
+
+const hmCell = (key, label, strong) => ({ key, label, num: true, sort: (r) => r[key] || 0, text: (r) => hm(r[key]), cell: (r) => (strong ? `<strong>${hm(r[key])}</strong>` : hm(r[key])) });
+const timeCell = (key, label) => ({ key, label, num: true, sort: (r) => r[key], text: (r) => r[key] || '-', cell: (r) => esc(r[key]) || '-' });
+const textCell = (key, label) => ({ key, label, wrap: true, sort: (r) => r[key], text: (r) => r[key] || '', cell: (r) => (r[key] ? esc(r[key]) : '<span class="text-muted">-</span>') });
+const dateCol = { key: 'date', label: '日付', sort: (r) => r.date, text: (r) => mdLabel(r.date), cell: (r) => mdLabel(r.date) };
+const sundayRow = (r) => (r.weekday === '日' ? 'sunday' : '');
+
+const dayGrid = makeGrid({
+  tools: $('dayTools'), head: $('dayHead'), body: $('dayBody'), storeKey: 'kintai_att_grid_day', rowClass: sundayRow,
+  emptyText: 'この月の勤務の記録はありません。',
+  cols: [dateCol, timeCell('clock_in', '出勤'), timeCell('clock_out', '退勤'), hmCell('break_minutes', '休憩'), hmCell('worked_minutes', '勤務時間', true),
+    hmCell('overtime_minutes', '時間外'), hmCell('night_minutes', '深夜'), hmCell('holiday_minutes', '休日'),
+    textCell('division', '事業部'), textCell('site', '現場名'), textCell('remarks', '備考'), textCell('method', '入力方法')],
+});
+
+const divGrid = makeGrid({
+  tools: $('divTools'), head: $('divHead'), body: $('divBody'), storeKey: 'kintai_att_grid_div', rowClass: sundayRow,
+  emptyText: '該当する勤務はありません。',
+  cols: [dateCol,
+    { key: 'name', label: '社員', wrap: true, sort: (r) => r.employee_code, text: (r) => `${r.name} ${r.employee_code}`, cell: (r) => `${esc(r.name)}<span class="text-muted">(${esc(r.employee_code)})</span>` },
+    { key: 'role_label', label: '区分', sort: (r) => r.role_label, text: (r) => r.role_label || '', cell: (r) => esc(r.role_label) },
+    textCell('division', '事業部'), textCell('site', '現場名'), textCell('remarks', '備考'),
+    timeCell('clock_in', '出勤'), timeCell('clock_out', '退勤'), hmCell('break_minutes', '休憩'), hmCell('worked_minutes', '勤務時間', true),
+    hmCell('overtime_minutes', '時間外'), hmCell('night_minutes', '深夜'), hmCell('holiday_minutes', '休日')],
+});
+
 
 $('month').value = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 7);
 {
@@ -228,23 +384,11 @@ function render(data) {
     if (l.input_method_label) g.methods.add(l.input_method_label);
   }
 
-  $('dayBody').innerHTML = data.days.length ? data.days.map((d) => {
+  const join = (set) => [...set].join('、');
+  dayGrid.setRows(data.days.map((d) => {
     const g = byDate.get(d.date) || { divisions: new Set(), sites: new Set(), remarks: new Set(), methods: new Set() };
-    return `<tr class="${d.weekday === '日' ? 'sunday' : ''}">
-      <td>${mdLabel(d.date)}</td>
-      <td class="num">${esc(d.clock_in) || '-'}</td>
-      <td class="num">${esc(d.clock_out) || '-'}</td>
-      <td class="num">${d.break_minutes ? hm(d.break_minutes) : '-'}</td>
-      <td class="num"><strong>${hm(d.worked_minutes)}</strong></td>
-      <td class="num">${hm(d.overtime_minutes)}</td>
-      <td class="num">${hm(d.night_minutes)}</td>
-      <td class="num">${hm(d.holiday_minutes)}</td>
-      <td class="wrap">${g.divisions.size ? [...g.divisions].map(esc).join('、') : '<span class="text-muted">-</span>'}</td>
-      <td class="wrap">${g.sites.size ? [...g.sites].map(esc).join('、') : '<span class="text-muted">-</span>'}</td>
-      <td class="wrap">${g.remarks.size ? [...g.remarks].map(esc).join('、') : '<span class="text-muted">-</span>'}</td>
-      <td>${g.methods.size ? [...g.methods].map(esc).join('、') : '<span class="text-muted">-</span>'}</td>
-    </tr>`;
-  }).join('') : '<tr><td colspan="12" class="att-empty">この月の勤務の記録はありません。</td></tr>';
+    return { ...d, division: join(g.divisions), site: join(g.sites), remarks: join(g.remarks), method: join(g.methods) };
+  }));
 
   $('logBody').innerHTML = data.logs.length ? data.logs.map((l) => `<tr>
       <td>${mdLabel(jstDate(l.timestamp))}</td>
@@ -270,18 +414,7 @@ function renderDivision(data) {
   $('divTotalHead').textContent = byRole ? '区分' : '事業部';
   $('divTotalTitle').textContent = byRole ? '区分ごとの合計' : '事業部ごとの合計';
   $('divDetailTitle').textContent = `日別の一覧(${byRole ? ($('roleSelect').selectedOptions[0].textContent) : ($('divSelect').value || 'すべての事業部')})`;
-  $('divBody').innerHTML = data.rows.length ? data.rows.map((r) => `<tr class="${r.weekday === '日' ? 'sunday' : ''}">
-      <td>${mdLabel(r.date)}</td>
-      <td class="wrap">${esc(r.name)}<span class="text-muted">(${esc(r.employee_code)})</span></td>
-      <td>${esc(r.role_label)}</td>
-      <td class="wrap">${r.division ? esc(r.division) : '<span class="text-muted">-</span>'}</td>
-      <td class="wrap">${r.site ? esc(r.site) : '<span class="text-muted">-</span>'}</td>
-      <td class="wrap">${r.remarks ? esc(r.remarks) : '<span class="text-muted">-</span>'}</td>
-      <td class="num">${esc(r.clock_in) || '-'}</td><td class="num">${esc(r.clock_out) || '-'}</td>
-      <td class="num">${r.break_minutes ? hm(r.break_minutes) : '-'}</td>
-      <td class="num"><strong>${hm(r.worked_minutes)}</strong></td>
-      <td class="num">${hm(r.overtime_minutes)}</td><td class="num">${hm(r.night_minutes)}</td><td class="num">${hm(r.holiday_minutes)}</td>
-    </tr>`).join('') : '<tr><td colspan="13" class="att-empty">該当する勤務はありません。</td></tr>';
+  divGrid.setRows(data.rows);
   $('divResult').hidden = false;
 }
 
