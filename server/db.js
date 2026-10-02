@@ -127,7 +127,7 @@ function ensureSchema() {
         );
       `);
 
-      // 区別マスタに「委託職員」「協力会社」を追加(既存テーブルのCHECK制約を更新する)
+      // 区分マスタに「委託職員」「協力会社」を追加(既存テーブルのCHECK制約を更新する)
       await query(`ALTER TABLE employees DROP CONSTRAINT IF EXISTS employees_role_check;`);
       await query(`ALTER TABLE employees ADD CONSTRAINT employees_role_check CHECK (role IN ('employee','admin','contractor','partner'));`);
 
