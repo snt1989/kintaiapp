@@ -562,6 +562,53 @@ router.put('/employees/:id', async (req, res, next) => {
   }
 });
 
+// ---- 個別の勤怠データ(社員1人・1か月分) ----
+// 日別の内訳(出勤・退勤・休憩・勤務時間)、月の集計、打刻明細を返す。給与の金額は含まない。
+router.get('/employees/:id/attendance', async (req, res, next) => {
+  try {
+    const month = req.query.month || new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 7);
+    const range = payroll.monthRangeIso(month);
+    if (!range) return res.status(400).json({ error: '対象月の形式が正しくありません(例: 2026-09)。' });
+    const emp = await db.get(
+      'SELECT id, employee_code, name, role, active, division FROM employees WHERE id = ?',
+      [Number(req.params.id)]
+    );
+    if (!emp) return res.status(404).json({ error: '社員が見つかりません。' });
+
+    // 日をまたぐ勤務を正しく集計するため、前後1日ぶん多めに取得する
+    const from = new Date(new Date(range.startIso).getTime() - 24 * 3600 * 1000).toISOString();
+    const to = new Date(new Date(range.endIso).getTime() + 24 * 3600 * 1000).toISOString();
+    const around = await db.all(
+      'SELECT id, type, timestamp, note, remarks, site_division, input_method FROM attendance_logs WHERE employee_id = ? AND timestamp >= ? AND timestamp < ? ORDER BY timestamp, id',
+      [emp.id, from, to]
+    );
+    const summary = payroll.calculateEmployee(around, 0, undefined, month);
+    const logs = around
+      .filter((l) => l.timestamp >= range.startIso && l.timestamp < range.endIso)
+      .map((l) => ({
+        ...l,
+        label: TYPE_LABELS[l.type],
+        input_method_label: INPUT_METHOD_LABELS[l.input_method] || INPUT_METHOD_LABELS.clock,
+      }));
+    res.json({
+      month,
+      employee: emp,
+      summary: {
+        work_days: summary.work_days,
+        total_minutes: summary.total_minutes,
+        overtime_minutes: summary.overtime_minutes,
+        night_minutes: summary.night_minutes,
+        holiday_minutes: summary.holiday_minutes,
+        incomplete: summary.incomplete,
+      },
+      days: payroll.dailyBreakdown(around, month),
+      logs,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---- 勤怠ログ閲覧 ----
 
 function buildLogsQuery({ employee_id, from, to }) {

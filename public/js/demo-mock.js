@@ -999,6 +999,30 @@ function loadPayroll() {
     return ok({ employee: listedEmployee(e) });
   });
 
+  // ---- /api/admin: 個別の勤怠データ(社員1人・1か月分) ----
+  route('GET', '/admin/employees/:id/attendance', ADMIN, function (ctx) {
+    var month = ctx.query.month || new Date(Date.now() + JST_OFFSET_MS).toISOString().slice(0, 7);
+    var range = payroll.monthRangeIso(month);
+    if (!range) return fail(400, '対象月の形式が正しくありません(例: 2026-09)。');
+    var emp = employeeById(ctx.params.id);
+    if (!emp) return fail(404, '社員が見つかりません。');
+    var around = logsAround(range, emp.id).slice().sort(function (a, b) { return a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : a.id - b.id; });
+    var summary = payroll.calculateEmployee(around, 0, undefined, month);
+    var logs = around.filter(function (l) { return l.timestamp >= range.startIso && l.timestamp < range.endIso; }).map(function (l) {
+      return Object.assign({}, l, { label: TYPE_LABELS[l.type], input_method_label: INPUT_METHOD_LABELS[l.input_method] || INPUT_METHOD_LABELS.clock });
+    });
+    return ok({
+      month: month,
+      employee: { id: emp.id, employee_code: emp.employee_code, name: emp.name, role: emp.role, active: emp.active, division: emp.division },
+      summary: {
+        work_days: summary.work_days, total_minutes: summary.total_minutes, overtime_minutes: summary.overtime_minutes,
+        night_minutes: summary.night_minutes, holiday_minutes: summary.holiday_minutes, incomplete: summary.incomplete,
+      },
+      days: payroll.dailyBreakdown(around, month),
+      logs: logs,
+    });
+  });
+
   // ---- /api/admin: 勤怠ログ ----
 
   function filteredAdminLogs(query) {
