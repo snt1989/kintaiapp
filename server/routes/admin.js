@@ -562,6 +562,76 @@ router.put('/employees/:id', async (req, res, next) => {
   }
 });
 
+
+// 事業部別の勤怠一覧。日ごとの事業部・現場名は、その日の打刻(出勤を優先)から取る。
+function buildDivisionAttendance(emps, logsOf, month, division) {
+  var jstDay = function (ts) { return new Date(new Date(ts).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10); };
+  var rows = [];
+  var incomplete = 0;
+  emps.forEach(function (emp) {
+    var around = logsOf(emp.id);
+    if (!around.length) return;
+    var byDay = {};
+    around.forEach(function (l) {
+      var k = jstDay(l.timestamp);
+      (byDay[k] = byDay[k] || []).push(l);
+    });
+    var summary = payroll.calculateEmployee(around, 0, undefined, month);
+    incomplete += summary.incomplete ? 1 : 0;
+    payroll.dailyBreakdown(around, month).forEach(function (d) {
+      var dayLogs = (byDay[d.date] || []).slice().sort(function (a, b) { return (a.type === 'clock_in' ? 0 : 1) - (b.type === 'clock_in' ? 0 : 1); });
+      var withDiv = dayLogs.filter(function (l) { return l.site_division; })[0];
+      var withSite = dayLogs.filter(function (l) { return l.note; })[0];
+      var div = withDiv ? withDiv.site_division : (emp.division || '');
+      if (division && div !== division) return;
+      rows.push({
+        date: d.date, weekday: d.weekday, employee_id: emp.id, employee_code: emp.employee_code, name: emp.name,
+        division: div, site: withSite ? withSite.note : '',
+        clock_in: d.clock_in, clock_out: d.clock_out, break_minutes: d.break_minutes, worked_minutes: d.worked_minutes,
+        overtime_minutes: d.overtime_minutes, night_minutes: d.night_minutes, holiday_minutes: d.holiday_minutes,
+      });
+    });
+  });
+  rows.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.employee_code < b.employee_code ? -1 : a.employee_code > b.employee_code ? 1 : 0); });
+  var groups = {};
+  rows.forEach(function (r) {
+    var g = groups[r.division] || (groups[r.division] = { division: r.division, people: {}, days: 0, total_minutes: 0, overtime_minutes: 0, night_minutes: 0, holiday_minutes: 0 });
+    g.people[r.employee_id] = true;
+    g.days += 1;
+    g.total_minutes += r.worked_minutes; g.overtime_minutes += r.overtime_minutes; g.night_minutes += r.night_minutes; g.holiday_minutes += r.holiday_minutes;
+  });
+  var totals = Object.keys(groups).map(function (k) { var g = groups[k]; g.people = Object.keys(g.people).length; return g; })
+    .sort(function (a, b) { return a.division < b.division ? -1 : a.division > b.division ? 1 : 0; });
+  return { rows: rows, totals_by_division: totals };
+}
+
+// ---- 事業部別の勤怠一覧(全社員・1か月分) ----
+// division を指定するとその事業部の日だけに絞る。給与の金額は含まない。
+router.get('/attendance/by-division', async (req, res, next) => {
+  try {
+    const month = req.query.month || new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 7);
+    const range = payroll.monthRangeIso(month);
+    if (!range) return res.status(400).json({ error: '対象月の形式が正しくありません(例: 2026-09)。' });
+    const division = String(req.query.division || '');
+    const emps = await db.all('SELECT id, employee_code, name, division FROM employees ORDER BY employee_code');
+    const from = new Date(new Date(range.startIso).getTime() - 24 * 3600 * 1000).toISOString();
+    const to = new Date(new Date(range.endIso).getTime() + 24 * 3600 * 1000).toISOString();
+    const all = await db.all(
+      'SELECT id, employee_id, type, timestamp, note, site_division FROM attendance_logs WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp, id',
+      [from, to]
+    );
+    const byEmp = new Map();
+    for (const l of all) {
+      if (!byEmp.has(l.employee_id)) byEmp.set(l.employee_id, []);
+      byEmp.get(l.employee_id).push(l);
+    }
+    const result = buildDivisionAttendance(emps, (id) => byEmp.get(id) || [], month, division);
+    res.json({ month, division, ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---- 個別の勤怠データ(社員1人・1か月分) ----
 // 日別の内訳(出勤・退勤・休憩・勤務時間)、月の集計、打刻明細を返す。給与の金額は含まない。
 router.get('/employees/:id/attendance', async (req, res, next) => {
