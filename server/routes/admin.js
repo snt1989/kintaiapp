@@ -25,7 +25,7 @@ const INPUT_METHOD_LABELS = { clock: '打刻入力', manual: '直接入力' };
 
 // ---- マスタ管理 ----
 
-// 権限マスタ(固定): システムの動作に直結するため、追加・削除はできません
+// 区別マスタ(固定): システムの動作に直結するため、追加・削除はできません
 // (管理者のみが管理機能を利用可能。一般社員・委託職員・協力会社はいずれも打刻・自分の履歴閲覧のみ)
 const ROLE_MASTER = [
   { value: 'employee', label: '一般社員' },
@@ -564,13 +564,15 @@ router.put('/employees/:id', async (req, res, next) => {
 
 
 // 事業部別の勤怠一覧。日ごとの事業部・現場名は、その日の打刻(出勤を優先)から取る。
-function buildDivisionAttendance(emps, logsOf, month, division) {
+function buildDivisionAttendance(emps, logsOf, month, division, role, group) {
+  var ROLE_NAMES = { employee: '一般社員', contractor: '委託職員', partner: '協力会社', admin: '管理者' };
   var jstDay = function (ts) { return new Date(new Date(ts).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10); };
   var rows = [];
   var incomplete = 0;
   emps.forEach(function (emp) {
     var around = logsOf(emp.id);
     if (!around.length) return;
+      if (role && emp.role !== role) return;
     var byDay = {};
     around.forEach(function (l) {
       var k = jstDay(l.timestamp);
@@ -586,7 +588,7 @@ function buildDivisionAttendance(emps, logsOf, month, division) {
       var div = withDiv ? withDiv.site_division : (emp.division || '');
       if (division && div !== division) return;
       rows.push({
-        date: d.date, weekday: d.weekday, employee_id: emp.id, employee_code: emp.employee_code, name: emp.name,
+        date: d.date, weekday: d.weekday, employee_id: emp.id, employee_code: emp.employee_code, name: emp.name, role: emp.role, role_label: ROLE_NAMES[emp.role] || emp.role,
         division: div, site: withSite ? withSite.note : '', remarks: remarks,
         clock_in: d.clock_in, clock_out: d.clock_out, break_minutes: d.break_minutes, worked_minutes: d.worked_minutes,
         overtime_minutes: d.overtime_minutes, night_minutes: d.night_minutes, holiday_minutes: d.holiday_minutes,
@@ -596,13 +598,14 @@ function buildDivisionAttendance(emps, logsOf, month, division) {
   rows.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.employee_code < b.employee_code ? -1 : a.employee_code > b.employee_code ? 1 : 0); });
   var groups = {};
   rows.forEach(function (r) {
-    var g = groups[r.division] || (groups[r.division] = { division: r.division, people: {}, days: 0, total_minutes: 0, overtime_minutes: 0, night_minutes: 0, holiday_minutes: 0 });
+    var key = group === 'role' ? r.role : r.division;
+      var g = groups[key] || (groups[key] = { division: key, label: group === 'role' ? r.role_label : r.division, people: {}, days: 0, total_minutes: 0, overtime_minutes: 0, night_minutes: 0, holiday_minutes: 0 });
     g.people[r.employee_id] = true;
     g.days += 1;
     g.total_minutes += r.worked_minutes; g.overtime_minutes += r.overtime_minutes; g.night_minutes += r.night_minutes; g.holiday_minutes += r.holiday_minutes;
   });
   var totals = Object.keys(groups).map(function (k) { var g = groups[k]; g.people = Object.keys(g.people).length; return g; })
-    .sort(function (a, b) { return a.division < b.division ? -1 : a.division > b.division ? 1 : 0; });
+    .sort(function (a, b) { return a.label < b.label ? -1 : a.label > b.label ? 1 : 0; });
   return { rows: rows, totals_by_division: totals };
 }
 
@@ -614,7 +617,7 @@ router.get('/attendance/by-division', async (req, res, next) => {
     const range = payroll.monthRangeIso(month);
     if (!range) return res.status(400).json({ error: '対象月の形式が正しくありません(例: 2026-09)。' });
     const division = String(req.query.division || '');
-    const emps = await db.all('SELECT id, employee_code, name, division FROM employees ORDER BY employee_code');
+    const emps = await db.all('SELECT id, employee_code, name, role, division FROM employees ORDER BY employee_code');
     const from = new Date(new Date(range.startIso).getTime() - 24 * 3600 * 1000).toISOString();
     const to = new Date(new Date(range.endIso).getTime() + 24 * 3600 * 1000).toISOString();
     const all = await db.all(
@@ -626,8 +629,10 @@ router.get('/attendance/by-division', async (req, res, next) => {
       if (!byEmp.has(l.employee_id)) byEmp.set(l.employee_id, []);
       byEmp.get(l.employee_id).push(l);
     }
-    const result = buildDivisionAttendance(emps, (id) => byEmp.get(id) || [], month, division);
-    res.json({ month, division, ...result });
+    const role = String(req.query.role || '');
+    const group = req.query.group === 'role' ? 'role' : 'division';
+    const result = buildDivisionAttendance(emps, (id) => byEmp.get(id) || [], month, division, role, group);
+    res.json({ month, division, role, group, ...result });
   } catch (err) {
     next(err);
   }

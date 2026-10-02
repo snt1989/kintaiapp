@@ -44,7 +44,7 @@ async function generateEmployeeCode() {
   return String(nextNum).padStart(digits, '0');
 }
 
-// 従業員による自己登録(社員番号は自動採番、権限は常に一般社員)
+// 従業員による自己登録(社員番号は自動採番、区別は常に一般社員)
 router.post('/register', async (req, res, next) => {
   try {
     const { last_name, first_name, password, division } = req.body || {};
