@@ -786,3 +786,79 @@ th { color: var(--color-text-muted); font-weight: 600; background: #fafafa; }
 .pay-flag-adj { background: #fef3c7; color: #92400e; }
 .slip-edit-link { margin-left: 6px; font-weight: 500; }
 .edit-table thead th:nth-child(n+2) { text-align: right; }
+
+/* ===== 見やすさ・使いやすさの調整 ===== */
+
+/* 入力欄の先頭のラベルは、上に余白を空けない(カードの上端がそろう) */
+label:first-child { margin-top: 0; }
+
+/* キーボードで操作したときの位置が分かる */
+:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+input:focus-visible, select:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25); }
+
+/* 管理画面のタブ: 文字を折り返さず、入りきらないときは横にスクロールする */
+.admin-subnav { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; gap: 4px; }
+.admin-subnav::-webkit-scrollbar { display: none; }
+.admin-subnav a { flex: none; white-space: nowrap; padding: 13px 10px; }
+@media (max-width: 480px) {
+  .admin-subnav { padding: 0 6px; gap: 0; }
+  .admin-subnav a { padding: 13px 8px; font-size: 13.5px; }
+}
+
+/* 表: 横にスクロールできるときは、端に影を出して続きがあることを示す */
+.table-wrap {
+  background:
+    linear-gradient(to right, #fff 30%, rgba(255, 255, 255, 0)) left center / 28px 100% no-repeat local,
+    linear-gradient(to left, #fff 30%, rgba(255, 255, 255, 0)) right center / 28px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0)) left center / 10px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0)) right center / 10px 100% no-repeat scroll;
+}
+@media (hover: hover) {
+  tbody tr:hover td { background: #f4f7fe; }
+}
+
+/* 個別勤怠の表: 左端の列(日付)を固定して、横にスクロールしても行が分かる */
+.att-table th:first-child, .att-table td:first-child { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 1px 0 0 var(--color-border); }
+.att-table th:first-child { background: #fafafa; z-index: 2; }
+@media (hover: hover) {
+  .att-table tbody tr:hover td:first-child { background: #f4f7fe; }
+}
+
+/* 給与計算: 保存ボタンを、画面の下に付けて、長い表でも押せるようにする */
+#saveWagesBtn { position: sticky; bottom: 12px; z-index: 5; box-shadow: 0 6px 18px rgba(26, 86, 219, 0.3); }
+
+/* タッチ操作: ボタンと入力欄を押しやすい大きさにする */
+@media (pointer: coarse) {
+  .btn, .btn.small, .logout-btn { min-height: 44px; }
+  .btn.small { padding: 10px 16px; }
+  select, input:not([type="checkbox"]):not([type="radio"]) { min-height: 44px; }
+  .link-btn, .slip-link { display: inline-block; padding: 6px 4px; }
+}
+
+/* 動きを減らす設定の端末では、画面の動きを止める */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+
+/* 切り替えボタン(表示の切り替えなど) */
+.seg { display: flex; border: 1px solid var(--color-border); border-radius: 10px; overflow: hidden; background: #fff; }
+.seg button { flex: 1; border: 0; background: transparent; padding: 10px 8px; font-size: 14px; color: var(--color-text-muted); border-right: 1px solid var(--color-border); min-height: 42px; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--color-primary); color: #fff; font-weight: 700; }
+.seg button:focus-visible { outline-offset: -3px; }
+
+/* 給与計算: 割増率は、見出しと入力欄を縦にそろえて並べる */
+.pay-rates { display: block; }
+.pay-rates-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; align-items: end; margin-top: 8px; }
+.pay-rates-grid > div { min-width: 0; }
+.pay-rates-grid label { display: block; margin: 0 0 4px; font-size: 12px; line-height: 1.4; }
+.pay-rates-grid input { width: 100%; }
+.pay-rates-grid .btn { grid-column: 1 / -1; justify-self: start; }
+@media (min-width: 720px) {
+  .pay-rates-grid { grid-template-columns: repeat(3, 150px) auto; }
+  .pay-rates-grid .btn { grid-column: auto; }
+}
+/* 給与計算の上のボタンは、スマートフォンでは折り返さず、2列に並べる */
+@media (max-width: 480px) {
+  .filter-row .btn { flex: 1 1 calc(50% - 10px); }
+}

@@ -18,7 +18,7 @@
   .att-controls > div { min-width: 0; }
   .att-controls .emp-field { flex: 2 1 240px; }
   .att-controls .month-field { flex: 1 1 200px; }
-  .att-controls .view-field { flex: 0 1 130px; }
+  .att-controls .view-field { flex: 1 1 100%; }
   .att-controls .div-field { flex: 2 1 240px; }
   .att-controls [hidden] { display: none; }
   .att-controls .btn { margin-top: 0; width: auto; padding: 12px 16px; }
@@ -26,6 +26,7 @@
   .month-row input { flex: 1; min-width: 0; }
   .att-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px; }
   .att-stats .stat-box .num { font-size: 20px; font-variant-numeric: tabular-nums; }
+  @media (max-width: 480px) { .att-stats .stat-box { padding: 12px 6px; } .att-stats .stat-box:last-child:nth-child(odd) { grid-column: 1 / -1; } }
   .att-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-bottom: 12px; }
   .att-who strong { font-size: 18px; }
   .att-table td, .att-table th { white-space: nowrap; }
@@ -75,12 +76,16 @@
     <div class="card">
       <div class="att-controls">
         <div class="view-field">
-          <label for="viewMode">表示</label>
-          <select id="viewMode">
+          <select id="viewMode" hidden aria-hidden="true">
             <option value="employee">社員別</option>
             <option value="division">事業部別</option>
             <option value="role">区分別</option>
           </select>
+          <div class="seg" id="viewSeg" role="group" aria-label="表示の切り替え">
+            <button type="button" data-v="employee" aria-pressed="true">社員別</button>
+            <button type="button" data-v="division" aria-pressed="false">事業部別</button>
+            <button type="button" data-v="role" aria-pressed="false">区分別</button>
+          </div>
         </div>
         <div class="emp-field" id="empField">
           <label for="empSelect">社員</label>
@@ -425,8 +430,18 @@ function renderDivision(data) {
   $('divResult').hidden = false;
 }
 
+function syncSeg() {
+  document.querySelectorAll('#viewSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === $('viewMode').value)));
+}
+document.querySelectorAll('#viewSeg button').forEach((b) => b.addEventListener('click', () => {
+  if ($('viewMode').value === b.dataset.v) return;
+  $('viewMode').value = b.dataset.v;
+  setView();
+}));
+
 function setView() {
   const mode = $('viewMode').value;
+  syncSeg();
   $('empField').hidden = mode !== 'employee';
   $('divField').hidden = mode !== 'division';
   $('roleField').hidden = mode !== 'role';
@@ -485,12 +500,14 @@ $('nextMonth').addEventListener('click', () => shiftMonth(1));
       $('viewMode').value = 'role';
       $('empField').hidden = true;
       $('roleField').hidden = false;
+      syncSeg();
       if ([...$('roleSelect').options].some((o) => o.value === q.get('role'))) $('roleSelect').value = q.get('role');
     }
     if (q.get('view') === 'division') {
       $('viewMode').value = 'division';
       $('empField').hidden = true;
       $('divField').hidden = false;
+      syncSeg();
       if (divs.some((d) => d.name === q.get('division'))) $('divSelect').value = q.get('division');
     }
   } catch (err) {

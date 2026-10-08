@@ -47,11 +47,13 @@
       </div>
 
       <div class="pay-rates">
-        <span class="pay-rates-title">割増率(%)</span>
-        <label for="rateOvertime">時間外(1日8時間超)</label><input type="number" id="rateOvertime" min="0" max="200" step="1">
-        <label for="rateNight">深夜(22時〜5時)</label><input type="number" id="rateNight" min="0" max="200" step="1">
-        <label for="rateHoliday">休日(日曜)</label><input type="number" id="rateHoliday" min="0" max="200" step="1">
-        <button class="btn small" id="saveRatesBtn" type="button">割増率を保存</button>
+        <div class="pay-rates-title">割増率(%)</div>
+        <div class="pay-rates-grid">
+          <div><label for="rateOvertime">時間外(1日8時間超)</label><input type="number" id="rateOvertime" min="0" max="200" step="1" inputmode="numeric"></div>
+          <div><label for="rateNight">深夜(22時〜5時)</label><input type="number" id="rateNight" min="0" max="200" step="1" inputmode="numeric"></div>
+          <div><label for="rateHoliday">休日(日曜)</label><input type="number" id="rateHoliday" min="0" max="200" step="1" inputmode="numeric"></div>
+          <button class="btn small" id="saveRatesBtn" type="button">割増率を保存</button>
+        </div>
       </div>
       <div id="rateMsg"></div>
     </div>

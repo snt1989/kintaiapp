@@ -20,6 +20,11 @@
   window.addEventListener('appinstalled', function () { deferred = null; show('installBox', false); });
 
   document.addEventListener('DOMContentLoaded', function () {
+    // 管理画面のタブ: 選択中のタブが見える位置までスクロールする
+    var nav = document.querySelector('.admin-subnav');
+    var active = nav && nav.querySelector('a.active');
+    if (active) nav.scrollLeft = active.offsetLeft - (nav.clientWidth - active.offsetWidth) / 2;
+
     var btn = document.getElementById('installBtn');
     if (btn) {
       btn.addEventListener('click', function () {

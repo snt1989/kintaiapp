@@ -2,7 +2,7 @@
  * - 画面(HTML・CSS・JS・アイコン)だけを端末に保存し、表示を速くする。
  * - /api/ のデータ(打刻・勤怠・給与など)は保存しない。通信できないときは、打刻などはできない。
  * - 画面のファイルを更新したときは、VERSION を変える。 */
-const VERSION = 'kintai-v1';
+const VERSION = 'kintai-v2';
 const SHELL = [
   '/offline.html', '/css/style.css', '/js/api.js', '/js/demo-mock.js', '/js/pwa.js',
   '/favicon.png', '/apple-touch-icon.png', '/icons/icon-192.png', '/icons/icon-512.png', '/manifest.webmanifest',
