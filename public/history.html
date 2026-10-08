@@ -80,7 +80,8 @@
 <script src="/js/api.js"></script>
 <script>
 Api.requireLogin();
-const employee = Api.getEmployee();
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const employee = Api.getEmployee() || {};
 document.getElementById('userName').textContent = `${employee.name} (${employee.employee_code})`;
 
 document.getElementById('logoutBtn').addEventListener('click', () => {
@@ -153,10 +154,10 @@ async function loadHistory() {
         const t = new Date(l.timestamp);
         const date = t.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' });
         const time = t.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' });
-        const division = l.site_division ? l.site_division : '<span class="text-muted">-</span>';
-        const site = l.note ? l.note : '<span class="text-muted">-</span>';
-        const remarks = l.remarks ? l.remarks : '<span class="text-muted">-</span>';
-        return `<tr><td>${date}</td><td>${time}</td><td><span class="badge ${l.type}">${l.label}</span></td><td>${division}</td><td>${site}</td><td>${remarks}</td></tr>`;
+        const division = l.site_division ? esc(l.site_division) : '<span class="text-muted">-</span>';
+        const site = l.note ? esc(l.note) : '<span class="text-muted">-</span>';
+        const remarks = l.remarks ? esc(l.remarks) : '<span class="text-muted">-</span>';
+        return `<tr><td>${date}</td><td>${time}</td><td><span class="badge ${l.type}">${esc(l.label)}</span></td><td>${division}</td><td>${site}</td><td>${remarks}</td></tr>`;
       })
       .join('');
 

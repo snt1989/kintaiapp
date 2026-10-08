@@ -82,7 +82,8 @@
 <script src="/js/api.js"></script>
 <script>
 Api.requireLogin();
-const employee = Api.getEmployee();
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const employee = Api.getEmployee() || {};
 document.getElementById('userName').textContent = `${employee.name} (${employee.employee_code})`;
 document.getElementById('logoutBtn').addEventListener('click', () => {
   Api.clearSession();
@@ -109,7 +110,7 @@ $('siteName').value = localStorage.getItem(SITE_NAME_KEY) || '';
     const data = await Api.request('/auth/divisions');
     const preferred = localStorage.getItem(SITE_DIVISION_KEY) || employee.division || '';
     $('siteDivision').innerHTML = '<option value="">選択してください</option>' +
-      data.divisions.map((d) => `<option value="${d.name}">${d.name}</option>`).join('');
+      data.divisions.map((d) => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
     if (preferred && data.divisions.some((d) => d.name === preferred)) $('siteDivision').value = preferred;
   } catch (err) {
     console.error(err);

@@ -88,7 +88,8 @@
 <script src="/js/api.js"></script>
 <script>
 Api.requireLogin();
-const employee = Api.getEmployee();
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const employee = Api.getEmployee() || {};
 document.getElementById('userName').textContent = `${employee.name} (${employee.employee_code})`;
 document.getElementById('greeting').textContent = `${employee.name} さん、おかえりなさい`;
 
@@ -120,7 +121,7 @@ async function loadSiteDivisionOptions() {
     // 保存値が無ければ、社員本人の所属事業部を初期選択の候補にする
     const preferred = saved || employee.division || '';
     siteDivisionSelect.innerHTML = '<option value="">選択してください</option>' +
-      data.divisions.map((d) => `<option value="${d.name}">${d.name}</option>`).join('');
+      data.divisions.map((d) => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
     if (preferred && data.divisions.some((d) => d.name === preferred)) {
       siteDivisionSelect.value = preferred;
     }

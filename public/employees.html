@@ -173,7 +173,8 @@
 <script src="/js/api.js"></script>
 <script>
 Api.requireAdmin();
-const employee = Api.getEmployee();
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const employee = Api.getEmployee() || {};
 document.getElementById('userName').textContent = `${employee.name} (管理者)`;
 
 document.getElementById('logoutBtn').addEventListener('click', () => {
@@ -202,14 +203,14 @@ function refreshDivisionOptions() {
   const filterSelect = document.getElementById('filterDivision');
   const currentFilter = filterSelect.value;
   filterSelect.innerHTML = '<option value="">すべて</option>' +
-    names.map((d) => `<option value="${d}">${d}</option>`).join('');
+    names.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
   if (names.includes(currentFilter)) filterSelect.value = currentFilter;
 
   const empDivisionSelect = document.getElementById('empDivision');
   if (empDivisionSelect) {
     const currentValue = empDivisionSelect.value;
     empDivisionSelect.innerHTML = '<option value="">未設定</option>' +
-      names.map((d) => `<option value="${d}">${d}</option>`).join('');
+      names.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
     if (names.includes(currentValue)) empDivisionSelect.value = currentValue;
   }
 
@@ -217,7 +218,7 @@ function refreshDivisionOptions() {
   if (bulkDivisionSelect) {
     const currentBulk = bulkDivisionSelect.value;
     bulkDivisionSelect.innerHTML = '<option value="">未設定にする</option>' +
-      names.map((d) => `<option value="${d}">${d}に変更</option>`).join('');
+      names.map((d) => `<option value="${esc(d)}">${esc(d)}に変更</option>`).join('');
     if (names.includes(currentBulk)) bulkDivisionSelect.value = currentBulk;
   }
 }
@@ -274,10 +275,10 @@ function renderTable() {
     return `
       <tr>
         <td><input type="checkbox" class="emp-select-checkbox" data-id="${e.id}" ${checked}></td>
-        <td>${e.employee_code}</td>
-        <td>${e.name}</td>
-        <td>${e.division ? e.division : '<span class="text-muted">未設定</span>'}</td>
-        <td><span class="role-tag ${e.role}">${ROLE_LABELS[e.role] || e.role}</span></td>
+        <td>${esc(e.employee_code)}</td>
+        <td>${esc(e.name)}</td>
+        <td>${e.division ? esc(e.division) : '<span class="text-muted">未設定</span>'}</td>
+        <td><span class="role-tag ${esc(e.role)}">${esc(ROLE_LABELS[e.role] || e.role)}</span></td>
         <td>${e.active ? '<span class="text-muted">有効</span>' : '<span class="inactive-tag">無効</span>'}</td>
         <td>${created}</td>
         <td><button class="link-btn" data-edit="${e.id}">編集</button> <a class="link-btn" href="/employee-attendance.html?id=${e.id}" style="text-decoration:none;">勤怠</a></td>
@@ -373,7 +374,7 @@ document.getElementById('bulkDeleteBtn').addEventListener('click', async () => {
     let text = `${result.deleted}件の社員を削除しました。`;
     if (result.skipped && result.skipped.length) {
       text += `<br>${result.skipped.length}件はスキップされました:<br>` +
-        result.skipped.map((s) => `・${s.name || s.id}: ${s.reason}`).join('<br>');
+        result.skipped.map((s) => `・${esc(s.name || s.id)}: ${esc(s.reason)}`).join('<br>');
     }
     msgBox.innerHTML = `<div class="${result.skipped && result.skipped.length ? 'error-msg' : 'success-msg'}">${text}</div>`;
     selectedIds.clear();
@@ -395,8 +396,10 @@ async function loadEmployees() {
   }
 }
 
-['searchBox', 'filterRole', 'filterStatus', 'filterDivision'].forEach((id) => {
-  document.getElementById(id).addEventListener('input', renderTable);
+// 検索欄は入力のたびに絞り込む。「change」でも描画し直すと、検索欄から他のボタンへ移るときに
+// 表が作り直され、最初のクリックが無効になるため、検索欄は「input」だけにする。
+document.getElementById('searchBox').addEventListener('input', renderTable);
+['filterRole', 'filterStatus', 'filterDivision'].forEach((id) => {
   document.getElementById(id).addEventListener('change', renderTable);
 });
 

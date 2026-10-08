@@ -142,7 +142,7 @@
 <script src="/js/api.js"></script>
 <script>
 Api.requireAdmin();
-const employee = Api.getEmployee();
+const employee = Api.getEmployee() || {};
 document.getElementById('userName').textContent = `${employee.name} (管理者)`;
 document.getElementById('logoutBtn').addEventListener('click', () => {
   Api.clearSession();

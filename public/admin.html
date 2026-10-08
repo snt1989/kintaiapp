@@ -147,7 +147,8 @@
 <script src="/js/api.js"></script>
 <script>
 Api.requireAdmin();
-const employee = Api.getEmployee();
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const employee = Api.getEmployee() || {};
 document.getElementById('userName').textContent = `${employee.name} (管理者)`;
 
 document.getElementById('logoutBtn').addEventListener('click', () => {
@@ -161,7 +162,7 @@ async function loadEmployeeOptions() {
     const data = await Api.request('/admin/employees');
     document.getElementById('statEmployees').textContent = data.employees.length;
     select.innerHTML = '<option value="">全員</option>' +
-      data.employees.map((e) => `<option value="${e.id}">${e.name} (${e.employee_code})</option>`).join('');
+      data.employees.map((e) => `<option value="${e.id}">${esc(e.name)} (${esc(e.employee_code)})</option>`).join('');
   } catch (err) {
     // 社員一覧の取得に失敗しても、ログ表示自体は継続する
     console.error(err);
@@ -255,7 +256,7 @@ function renderWorkSummary(logs) {
 
   tbody.innerHTML = rows.map((r) => {
     const displayDate = new Date(`${r.dateKey}T00:00:00+09:00`).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' });
-    return `<tr><td>${r.employee_code}</td><td>${r.employee_name}</td><td>${displayDate}</td><td class="tabular-time">${formatWorkedMinutes(r.minutes)}</td></tr>`;
+    return `<tr><td>${esc(r.employee_code)}</td><td>${esc(r.employee_name)}</td><td>${displayDate}</td><td class="tabular-time">${formatWorkedMinutes(r.minutes)}</td></tr>`;
   }).join('');
 }
 
@@ -311,14 +312,14 @@ async function loadLogs() {
 
     tbody.innerHTML = data.logs.map((l) => {
       const inputValue = isoToJstInputValue(l.timestamp);
-      const division = l.site_division ? l.site_division : '<span class="text-muted">-</span>';
-      const site = l.note ? l.note : '<span class="text-muted">-</span>';
-      const remarks = l.remarks ? l.remarks : '<span class="text-muted">-</span>';
+      const division = l.site_division ? esc(l.site_division) : '<span class="text-muted">-</span>';
+      const site = l.note ? esc(l.note) : '<span class="text-muted">-</span>';
+      const remarks = l.remarks ? esc(l.remarks) : '<span class="text-muted">-</span>';
       return `<tr>
         <td><input type="checkbox" class="log-select-checkbox" data-id="${l.id}"></td>
-        <td>${l.employee_code}</td>
-        <td>${l.employee_name}</td>
-        <td><span class="badge ${l.type}">${l.label}</span></td>
+        <td>${esc(l.employee_code)}</td>
+        <td>${esc(l.employee_name)}</td>
+        <td><span class="badge ${l.type}">${esc(l.label)}</span></td>
         <td>${division}</td>
         <td>${site}</td>
         <td>${remarks}</td>
@@ -516,7 +517,7 @@ async function loadStorageInfo() {
       tbody.innerHTML = '<tr><td colspan="3" class="text-muted">テーブルがありません。</td></tr>';
       return;
     }
-    tbody.innerHTML = data.tables.map((t) => `<tr><td>${t.name}</td><td>${t.pretty}</td><td>${t.row_estimate.toLocaleString('ja-JP')}</td></tr>`).join('');
+    tbody.innerHTML = data.tables.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(t.pretty)}</td><td>${t.row_estimate.toLocaleString('ja-JP')}</td></tr>`).join('');
   } catch (err) {
     usedText.textContent = `取得できませんでした: ${err.message}`;
     tbody.innerHTML = `<tr><td colspan="3" class="error-msg">${err.message}</td></tr>`;

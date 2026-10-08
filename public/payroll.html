@@ -88,7 +88,7 @@
 <script src="/js/api.js"></script>
 <script>
 Api.requireAdmin();
-const employee = Api.getEmployee();
+const employee = Api.getEmployee() || {};
 document.getElementById('userName').textContent = `${employee.name} (管理者)`;
 document.getElementById('logoutBtn').addEventListener('click', () => {
   Api.clearSession();
@@ -177,7 +177,21 @@ function render(data) {
   updateSaveButton();
 }
 
-async function load() {
+// 保存していない変更があるときは、月の切り替え・再表示の前に確認する(黙って破棄しない)
+let shownMonth = null;
+function confirmDiscard() {
+  if (!Object.keys(pendingChanges).length) return true;
+  if (window.confirm('保存していない変更があります。破棄して表示し直しますか?')) return true;
+  if (shownMonth) $('month').value = shownMonth;
+  return false;
+}
+window.addEventListener('beforeunload', (ev) => {
+  if (Object.keys(pendingChanges).length) { ev.preventDefault(); ev.returnValue = ''; }
+});
+
+async function load(ev) {
+  if (ev && ev.type && !confirmDiscard()) return;
+  shownMonth = $('month').value;
   $('wageMsg').innerHTML = '';
   Object.keys(pendingChanges).forEach((k) => delete pendingChanges[k]);
   $('payBody').innerHTML = '<tr><td colspan="15" class="text-muted">読み込み中...</td></tr>';

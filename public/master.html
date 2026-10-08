@@ -121,7 +121,8 @@
 <script src="/js/api.js"></script>
 <script>
 Api.requireAdmin();
-const employee = Api.getEmployee();
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const employee = Api.getEmployee() || {};
 document.getElementById('userName').textContent = `${employee.name} (管理者)`;
 
 document.getElementById('logoutBtn').addEventListener('click', () => {
@@ -147,7 +148,7 @@ function renderDivisionTable() {
           <button class="link-btn" data-move-up="${d.id}" ${isFirst ? 'disabled' : ''} title="上へ">↑</button>
           <button class="link-btn" data-move-down="${d.id}" ${isLast ? 'disabled' : ''} title="下へ">↓</button>
         </td>
-        <td>${d.name}</td>
+        <td>${esc(d.name)}</td>
         <td>${d.employee_count}名</td>
         <td>${created}</td>
         <td>
