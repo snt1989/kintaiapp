@@ -2,9 +2,15 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1a56db">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="勤怠管理">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>使い方 Q&A | 勤怠管理システム</title>
 <link rel="stylesheet" href="/css/style.css">
 <style>
@@ -22,6 +28,7 @@
   .qa-none { padding: 24px 8px; text-align: center; color: var(--color-text-muted); }
   .qa-back { display: inline-block; margin-bottom: 12px; font-size: 13px; }
 </style>
+<script src="/js/pwa.js" defer></script>
 </head>
 <body>
 <div class="app">
@@ -61,6 +68,15 @@
 
       <details class="qa"><summary>パスワードを忘れた、変更したい</summary><div class="qa-a">
         <p>管理者に連絡してください。管理者が「社員情報の編集」で新しいパスワードを設定します。現在のパスワードを画面で確認することはできません。</p>
+      </div></details>
+
+      <details class="qa"><summary>スマートフォンにアプリとして入れられますか?</summary><div class="qa-a">
+        <p>はい。ホーム画面に追加すると、アプリのように全画面で開けます。アプリストアからの入手は不要です。</p>
+        <ul>
+          <li>iPhone・iPad: Safari でこのページを開き、共有ボタン(□↑)から「ホーム画面に追加」を選びます。</li>
+          <li>Android: Chrome でこのページを開き、メニュー(︙)から「アプリをインストール」または「ホーム画面に追加」を選びます。ログイン画面の「アプリとしてインストール」ボタンからも追加できます。</li>
+        </ul>
+        <p>打刻や勤怠の確認には、インターネットへの接続が必要です。通信できないときは、オフラインの案内が表示されます。</p>
       </div></details>
 
       <h2 class="qa-group">勤怠の確認と修正(管理者)</h2>

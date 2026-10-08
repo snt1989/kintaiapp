@@ -2,9 +2,15 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1a56db">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="勤怠管理">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>個別勤怠 | 勤怠管理システム</title>
 <link rel="stylesheet" href="/css/style.css">
 <style>
@@ -44,6 +50,7 @@
   .att-flag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #fef3c7; color: #92400e; }
   .att-empty { padding: 28px 8px; text-align: center; color: var(--color-text-muted); }
 </style>
+<script src="/js/pwa.js" defer></script>
 </head>
 <body>
 <div class="app wide">

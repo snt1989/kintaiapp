@@ -457,6 +457,7 @@ nav.tabbar {
   display: flex;
   max-width: 480px;
   margin: 0 auto;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 nav.tabbar a {
