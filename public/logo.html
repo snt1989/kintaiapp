@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1a56db">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="勤怠管理">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>ロゴ・アイコン設定 | 勤怠管理システム</title>
+<link rel="stylesheet" href="/css/style.css">
+<script src="/js/pwa.js" defer></script>
+</head>
+<body>
+<div class="app wide">
+  <header class="topbar">
+    <h1>ロゴ・アイコン設定</h1>
+    <div class="user-info">
+      <a class="help-link" href="/help.html">使い方</a>
+      <span id="userName"></span>
+      <button class="logout-btn" id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <nav class="admin-subnav">
+    <a href="/employee-attendance.html">個別勤怠</a>
+    <a href="/payroll.html">給与計算</a>
+    <a href="/employees.html">社員管理</a>
+    <a href="/master.html" class="active">マスタ管理</a>
+    <a href="/admin.html">勤怠ログ</a>
+  </nav>
+
+  <main>
+    <p class="logo-back"><a href="/master.html">← マスタ管理に戻る</a></p>
+
+    <div class="logo-layout">
+      <div class="card">
+        <div class="section-title">設定</div>
+
+        <label>ロゴ画像</label>
+        <div class="logo-src-row">
+          <button type="button" class="btn secondary small" id="useCurrentBtn">現在のロゴを使う</button>
+          <label class="btn secondary small logo-file-btn" for="logoFile">画像を選ぶ</label>
+          <input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>
+        </div>
+        <p class="text-muted" id="srcName">現在のロゴ(icons/icon-512.png)</p>
+        <p class="text-muted">PNG・JPEG・WebP・SVG に対応。正方形で、できれば 512px 以上の画像がきれいに仕上がります。画像は端末の中だけで処理され、サーバーには送られません。</p>
+
+        <label for="bgColor">背景色</label>
+        <div class="logo-bg-row">
+          <input type="color" id="bgColor" value="#ffffff">
+          <label class="logo-check"><input type="checkbox" id="bgTransparent"> 透明にする(ホーム画面用は除く)</label>
+        </div>
+
+        <label for="padding">余白 <span id="paddingVal" class="text-muted"></span></label>
+        <input type="range" id="padding" min="0" max="30" step="1" value="8">
+
+        <label>形(通常のアイコン)</label>
+        <div class="seg" id="shapeSeg">
+          <button type="button" data-v="square">四角</button>
+          <button type="button" data-v="rounded">角丸</button>
+          <button type="button" data-v="circle">円</button>
+        </div>
+
+        <button type="button" class="btn secondary small" id="resetBtn" style="margin-top:16px;">設定をもとに戻す</button>
+      </div>
+
+      <div class="card">
+        <div class="section-title">プレビュー</div>
+        <div class="logo-preview">
+          <div class="logo-pv" id="pvBig"><canvas id="cvBig" width="512" height="512"></canvas><span>512px</span></div>
+          <div class="logo-pv"><div class="logo-phone"><canvas id="cvHome" width="180" height="180"></canvas></div><span>ホーム画面</span></div>
+          <div class="logo-pv"><div class="logo-tab"><canvas id="cvFav" width="32" height="32"></canvas><b>勤怠管理システム</b></div><span>ブラウザのタブ</span></div>
+          <div class="logo-pv"><div class="logo-mask-demo"><canvas id="cvMask" width="192" height="192"></canvas></div><span>Android(円形に切り抜き)</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        ダウンロード
+        <button type="button" class="btn small" id="zipBtn">すべてまとめて ZIP</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ファイル名</th><th>サイズ</th><th>用途</th><th></th></tr></thead>
+          <tbody id="fileBody"></tbody>
+        </table>
+      </div>
+      <div id="dlMsg" class="text-muted" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">アプリに反映するには</div>
+      <ol class="logo-steps">
+        <li>上の「すべてまとめて ZIP」をダウンロードして展開します。中の <code>public</code> フォルダは、アプリの <code>public</code> フォルダと同じ並びです。</li>
+        <li><code>favicon.png</code> と <code>apple-touch-icon.png</code> (<code>public/</code>)と、<code>icon-192.png</code>・<code>icon-512.png</code>・<code>maskable-512.png</code>(<code>public/icons/</code>)を、同じ名前のファイルに上書きします。</li>
+        <li>変更を GitHub に push すると、Vercel が自動で公開します。スマートフォンでは、一度ホーム画面のアイコンを削除して追加し直すと新しいアイコンになります。</li>
+      </ol>
+      <p class="text-muted">設定内容(色・余白・形)と選んだ画像は、この端末のブラウザにだけ保存されます。他の端末や他の管理者とは共有されません。</p>
+    </div>
+  </main>
+</div>
+
+<script src="/js/demo-mock.js"></script>
+<script src="/js/api.js"></script>
+<script>
+Api.requireAdmin();
+const employee = Api.getEmployee() || {};
+document.getElementById('userName').textContent = `${employee.name} (管理者)`;
+document.getElementById('logoutBtn').addEventListener('click', () => { Api.clearSession(); location.href = '/index.html'; });
+
+const CURRENT_LOGO = '/icons/icon-512.png';
+const DEFAULTS = { bg: '#ffffff', transparent: false, padding: 8, shape: 'rounded', src: 'current', srcName: '', srcData: '' };
+const KEY = 'kintai_logo_settings';
+let S = Object.assign({}, DEFAULTS);
+try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { /* 保存できなくても動く */ }
+let img = null;
+
+// 出力するファイル。maskable は端末側で切り抜かれるので、全面を背景色で塗り、中身を内側 80% に収める(安全領域)。
+const FILES = [
+  { name: 'favicon.png', size: 192, use: 'ブラウザのタブ・ブックマーク', mode: 'any' },
+  { name: 'apple-touch-icon.png', size: 180, use: 'iPhone / iPad のホーム画面(背景は透明にできません)', mode: 'solid' },
+  { name: 'icon-192.png', size: 192, use: 'アプリのアイコン(Android など)', mode: 'any' },
+  { name: 'icon-512.png', size: 512, use: 'アプリのアイコン(大)', mode: 'any' },
+  { name: 'maskable-512.png', size: 512, use: 'Android のホーム画面(円形などに切り抜き)', mode: 'maskable' },
+  { name: 'logo-1024.png', size: 1024, use: 'ロゴ単体(資料・名刺・SNS など。背景の設定に従う)', mode: 'plain' },
+];
+
+function pathRounded(ctx, s, r) {
+  ctx.beginPath();
+  ctx.moveTo(r, 0); ctx.arcTo(s, 0, s, s, r); ctx.arcTo(s, s, 0, s, r); ctx.arcTo(0, s, 0, 0, r); ctx.arcTo(0, 0, s, 0, r);
+  ctx.closePath();
+}
+
+function render(canvas, size, mode) {
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, size, size);
+  const bg = S.bg;
+  const transparentOk = S.transparent && (mode === 'any' || mode === 'plain');
+  let pad = S.padding / 100;
+  if (mode === 'maskable') pad = Math.max(pad, 0.2);
+  ctx.save();
+  if (mode === 'any' || mode === 'plain') {
+    if (mode === 'any' && S.shape === 'circle') { ctx.beginPath(); ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2); ctx.closePath(); ctx.clip(); }
+    else if (mode === 'any' && S.shape === 'rounded') { pathRounded(ctx, size, size * 0.2); ctx.clip(); }
+  }
+  if (!transparentOk) { ctx.fillStyle = bg; ctx.fillRect(0, 0, size, size); }
+  if (img) {
+    const box = size * (1 - pad * 2);
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    const k = Math.min(box / w, box / h);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, (size - w * k) / 2, (size - h * k) / 2, w * k, h * k);
+  }
+  ctx.restore();
+}
+
+function renderAll() {
+  render(document.getElementById('cvBig'), 512, 'any');
+  render(document.getElementById('cvHome'), 180, 'solid');
+  render(document.getElementById('cvFav'), 32, 'any');
+  const m = document.getElementById('cvMask'); render(m, 192, 'maskable');
+  document.getElementById('paddingVal').textContent = `${S.padding}%`;
+  document.getElementById('bgColor').value = S.bg;
+  document.getElementById('bgTransparent').checked = !!S.transparent;
+  document.getElementById('padding').value = S.padding;
+  document.querySelectorAll('#shapeSeg button').forEach((b) => b.classList.toggle('active', b.dataset.v === S.shape));
+  document.getElementById('srcName').textContent = S.src === 'current' ? '現在のロゴ(icons/icon-512.png)' : `選んだ画像: ${S.srcName || '(名称なし)'}`;
+}
+
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* 保存できなくても動く */ } }
+function change(patch) { Object.assign(S, patch); save(); renderAll(); }
+
+function loadImage(url) {
+  return new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = () => reject(new Error('画像を読み込めませんでした。')); i.src = url; });
+}
+async function setSource() {
+  const msg = document.getElementById('dlMsg');
+  try {
+    img = await loadImage(S.src === 'file' && S.srcData ? S.srcData : CURRENT_LOGO);
+    msg.textContent = '';
+  } catch (e) {
+    S.src = 'current'; img = null;
+    try { img = await loadImage(CURRENT_LOGO); } catch (e2) { msg.textContent = '現在のロゴを読み込めませんでした。'; }
+    if (e) msg.textContent = e.message;
+  }
+  renderAll();
+}
+
+document.getElementById('useCurrentBtn').addEventListener('click', () => { S.src = 'current'; S.srcName = ''; S.srcData = ''; save(); setSource(); });
+document.getElementById('logoFile').addEventListener('change', (ev) => {
+  const f = ev.target.files[0]; ev.target.value = '';
+  if (!f) return;
+  const msg = document.getElementById('dlMsg');
+  if (!/^image\/(png|jpeg|webp|svg\+xml)$/.test(f.type)) { msg.textContent = 'PNG・JPEG・WebP・SVG の画像を選んでください。'; return; }
+  if (f.size > 8 * 1024 * 1024) { msg.textContent = '画像が大きすぎます(8MB まで)。'; return; }
+  const r = new FileReader();
+  r.onload = () => {
+    S.src = 'file'; S.srcName = f.name; S.srcData = String(r.result);
+    save(); // 大きい画像は保存に失敗しても、そのまま使える
+    setSource();
+  };
+  r.readAsDataURL(f);
+});
+document.getElementById('bgColor').addEventListener('input', (e) => change({ bg: e.target.value }));
+document.getElementById('bgTransparent').addEventListener('change', (e) => change({ transparent: e.target.checked }));
+document.getElementById('padding').addEventListener('input', (e) => change({ padding: Number(e.target.value) }));
+document.getElementById('shapeSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) change({ shape: b.dataset.v }); });
+document.getElementById('resetBtn').addEventListener('click', () => { S = Object.assign({}, DEFAULTS); save(); setSource(); });
+
+function toBlob(file) {
+  const c = document.createElement('canvas');
+  render(c, file.size, file.mode);
+  return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
+}
+function saveBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+// ZIP(無圧縮)を自前で作る。外部のライブラリは使わない。
+const CRC = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xffffffff; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+function makeZip(entries) {
+  const enc = new TextEncoder(); const parts = []; const central = []; let offset = 0;
+  const d = new Date(); const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1); const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  entries.forEach((e) => {
+    const name = enc.encode(e.name); const crc = crc32(e.data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, time, true); lh.setUint16(12, date, true); lh.setUint32(14, crc, true);
+    lh.setUint32(18, e.data.length, true); lh.setUint32(22, e.data.length, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), name, e.data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, time, true); ch.setUint16(14, date, true); ch.setUint32(16, crc, true);
+    ch.setUint32(20, e.data.length, true); ch.setUint32(24, e.data.length, true); ch.setUint16(28, name.length, true);
+    ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), name);
+    offset += 30 + name.length + e.data.length;
+  });
+  let csize = 0; central.forEach((p) => { csize += p.length; });
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
+  end.setUint32(12, csize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
+}
+
+document.getElementById('fileBody').innerHTML = FILES.map((f, i) => `
+  <tr><td><code>${f.name}</code></td><td>${f.size}×${f.size}</td><td>${f.use}</td>
+  <td><button type="button" class="btn small" data-dl="${i}">ダウンロード</button></td></tr>`).join('');
+document.getElementById('fileBody').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-dl]'); if (!b) return;
+  const f = FILES[Number(b.dataset.dl)];
+  saveBlob(await toBlob(f), f.name);
+});
+const zipPath = (n) => (/^(icon-|maskable-)/.test(n) ? 'public/icons/' : n === 'logo-1024.png' ? 'ロゴ/' : 'public/') + n;
+document.getElementById('zipBtn').addEventListener('click', async () => {
+  const entries = [];
+  for (const f of FILES) { const blob = await toBlob(f); entries.push({ name: zipPath(f.name), data: new Uint8Array(await blob.arrayBuffer()) }); }
+  saveBlob(makeZip(entries), 'kintai-logo-icons.zip');
+  document.getElementById('dlMsg').textContent = `${entries.length} 個のファイルを ZIP にしました。`;
+});
+
+setSource();
+</script>
+</body>
+</html>
